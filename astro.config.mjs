@@ -6,5 +6,7 @@ import vercel from '@astrojs/vercel';
 
 export default defineConfig({
   output: 'server',
-  adapter: vercel(),
+  // maxDuration: AI routes (hero generation via fal.ai, topic suggestions via
+  // LLM) can take 20-60s — well past the default function timeout.
+  adapter: vercel({ maxDuration: 60 }),
 });

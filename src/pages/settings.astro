@@ -2,67 +2,135 @@
 import AdminLayout from '../layouts/AdminLayout.astro';
 import { getSetting } from '../lib/settings';
 import { env } from '../lib/env';
+import { PROVIDERS, IMAGE_MODELS, getProviderKey, getProviderModel, getActiveProvider, getFalKey, maskKey } from '../lib/llm';
 
-// Presence badges only — values are NEVER echoed to the page.
-const envs = [
+// Provider cards: key status (masked, never full value) + current model.
+const providers = await Promise.all(
+  PROVIDERS.map(async (p) => ({
+    ...p,
+    connected: Boolean(await getProviderKey(p.id)),
+    masked: maskKey(await getProviderKey(p.id)),
+    model: await getProviderModel(p.id),
+  })),
+);
+const activeProvider = await getActiveProvider();
+const falConnected = Boolean(await getFalKey());
+const falMasked = maskKey(await getFalKey());
+const defaultImageModel = (await getSetting('image_model')) || IMAGE_MODELS.find((m) => m.best)!.id;
+
+const infra = [
   { name: 'DATABASE_URL', label: 'Neon Postgres', hint: 'articles + topics database' },
   { name: 'BLOB_READ_WRITE_TOKEN', label: 'Vercel Blob', hint: 'hero image storage' },
   { name: 'GITHUB_TOKEN', label: 'GitHub PAT', hint: 'site-page edits + engine dispatch' },
-  { name: 'GITHUB_REPO', label: 'GitHub repo', hint: 'owner/name of the site repo' },
-  { name: 'ADMIN_EMAIL', label: 'Admin login', hint: 'ADMIN_EMAIL + ADMIN_PASSWORD + SESSION_SECRET' },
 ].map((e) => ({ ...e, set: Boolean(env(e.name)) }));
 
 const deployHook = await getSetting('deploy_hook_url');
 const ok = Astro.url.searchParams.get('ok');
 ---
-<AdminLayout title="Settings" active="settings" sub="Connections & deploy configuration">
+<AdminLayout title="LLM & API Settings" active="settings" sub="Configure API keys for AI features. Keys are stored securely in the database.">
   {ok && <div class="alert alert-success py-2 small">Saved.</div>}
 
-  <div class="row g-3">
-    <div class="col-lg-6">
-      <div class="card p-3 mb-3">
-        <h2 class="h6 fw-bold mb-3">Connections (env vars)</h2>
-        {envs.map((e) => (
-          <div class="d-flex justify-content-between align-items-center border-bottom border-secondary-subtle py-2">
-            <div>
-              <div class="fw-semibold small">{e.label}</div>
-              <div class="text-secondary small">{e.hint}</div>
-            </div>
-            {e.set
-              ? <span class="badge status-published">✓ Connected</span>
-              : <span class="badge status-failed">Not set</span>}
-          </div>
-        ))}
-        <div class="small text-secondary mt-2">
-          Secrets live in Vercel project env vars (this app) and GitHub Actions secrets (the engine)
-          — they are never stored in the database, and never displayed here.
-        </div>
+  <form method="post" action="/api/settings/save">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="h6 fw-bold mb-0">LLM Providers <span class="text-secondary fw-normal">(used by Suggest Topics &amp; admin AI)</span></h2>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-secondary">Active provider:</label>
+        <select class="form-select form-select-sm w-auto" name="llm_active_provider">
+          {providers.map((p) => (
+            <option value={p.id} selected={p.id === activeProvider} disabled={!p.connected && p.id !== activeProvider}>
+              {p.label}{p.connected ? '' : ' (no key)'}
+            </option>
+          ))}
+        </select>
       </div>
-      <div class="card p-3">
-        <h2 class="h6 fw-bold mb-2">Engine keys (GitHub secrets)</h2>
-        <div class="small text-secondary">
-          ANTHROPIC_API_KEY, FAL_KEY, DATABASE_URL and BLOB_READ_WRITE_TOKEN must be set as
-          <b> repository secrets</b> for the <span class="mono">Draft blog article (DB)</span> workflow.
-          Manage them in GitHub → Settings → Secrets and variables → Actions.
+    </div>
+
+    <div class="row g-3 mb-4">
+      {providers.map((p) => (
+        <div class="col-md-6">
+          <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <div class="fw-bold">{p.label}</div>
+                <div class="small text-secondary">{p.keyHint}</div>
+              </div>
+              {p.connected
+                ? <span class="badge status-published">✓ Connected</span>
+                : <span class="badge status-pending">Not set</span>}
+            </div>
+            <label class="form-label small mb-1">API Key</label>
+            <input class="form-control form-control-sm mono" type="password" name={`llm_${p.id}_key`}
+                   placeholder={p.connected ? 'Leave blank to keep existing key' : 'Paste API key'}
+                   autocomplete="off" />
+            {p.connected && <div class="small text-secondary mono mt-1">{p.masked}</div>}
+            <label class="form-label small mb-1 mt-2">Model</label>
+            <input class="form-control form-control-sm mono" name={`llm_${p.id}_model`} value={p.model} />
+          </div>
+        </div>
+      ))}
+
+      <div class="col-md-6">
+        <div class="card p-3 h-100">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="fw-bold">fal.ai (Images)</div>
+              <div class="small text-secondary">fal.ai/dashboard → API Keys — powers hero generation</div>
+            </div>
+            {falConnected
+              ? <span class="badge status-published">✓ Connected</span>
+              : <span class="badge status-pending">Not set</span>}
+          </div>
+          <label class="form-label small mb-1">API Key</label>
+          <input class="form-control form-control-sm mono" type="password" name="llm_fal_key"
+                 placeholder={falConnected ? 'Leave blank to keep existing key' : 'Paste fal.ai key'}
+                 autocomplete="off" />
+          {falConnected && <div class="small text-secondary mono mt-1">{falMasked}</div>}
+          <label class="form-label small mb-1 mt-2">Default image model</label>
+          <select class="form-select form-select-sm" name="image_model">
+            {IMAGE_MODELS.map((m) => (
+              <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+            ))}
+          </select>
         </div>
       </div>
     </div>
 
-    <div class="col-lg-6">
-      <div class="card p-3">
-        <h2 class="h6 fw-bold mb-3">Vercel Deploy Hook</h2>
-        <form method="post" action="/api/settings/save">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card p-3">
+          <h2 class="h6 fw-bold mb-3">Vercel Deploy Hook</h2>
           <label class="form-label small">Deploy hook URL (main site)</label>
           <input class="form-control mono mb-2" type="url" name="deploy_hook_url"
                  value={deployHook} placeholder="https://api.vercel.com/v1/integrations/deploy/…" />
-          <button class="btn btn-accent" type="submit">Save</button>
-        </form>
-        <div class="small text-secondary mt-2">
-          Publishing an article POSTs this hook so the static site rebuilds with the new content
-          (~1–2 min). Create it in the <b>main site's</b> Vercel project:
-          Settings → Git → Deploy Hooks → branch <span class="mono">main</span>.
+          <div class="small text-secondary">
+            Publishing an article POSTs this hook so the static site rebuilds (~1–2 min).
+            Create it in the main site's Vercel project: Settings → Git → Deploy Hooks.
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card p-3">
+          <h2 class="h6 fw-bold mb-3">Infrastructure (env vars)</h2>
+          {infra.map((e) => (
+            <div class="d-flex justify-content-between align-items-center border-bottom border-secondary-subtle py-2">
+              <div>
+                <div class="fw-semibold small">{e.label}</div>
+                <div class="text-secondary small">{e.hint}</div>
+              </div>
+              {e.set
+                ? <span class="badge status-published">✓ Connected</span>
+                : <span class="badge status-failed">Not set</span>}
+            </div>
+          ))}
+          <div class="small text-secondary mt-2">
+            The article-drafting engine (GitHub Actions) reads ANTHROPIC_API_KEY / FAL_KEY /
+            DATABASE_URL / BLOB_READ_WRITE_TOKEN from <b>repository secrets</b> — managed on GitHub,
+            not here.
+          </div>
         </div>
       </div>
     </div>
-  </div>
+
+    <button class="btn btn-accent mt-3" type="submit">💾 Save Settings</button>
+  </form>
 </AdminLayout>

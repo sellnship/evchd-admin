@@ -2,6 +2,9 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { sql, type Topic } from '../../lib/db';
 import { actionsUrl } from '../../lib/github';
+import { getActiveProvider, getProviderKey } from '../../lib/llm';
+import { getCategories } from '../../lib/categories';
+import { env } from '../../lib/env';
 
 const topics = (await sql()`
   SELECT t.*, a.id AS article_id
@@ -13,52 +16,71 @@ const ok = Astro.url.searchParams.get('ok');
 const err = Astro.url.searchParams.get('err');
 let ghUrl = '#';
 try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
+
+const activeProvider = await getActiveProvider();
+const llmReady = Boolean(await getProviderKey(activeProvider));
+const categories = await getCategories();
+const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the PAT
 ---
 <AdminLayout title="AI Article Generator" active="generator" sub="Queue a topic → the engine drafts EN + HI with all quality gates">
   {ok && <div class="alert alert-success py-2 small">{decodeURIComponent(ok)}</div>}
   {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
 
   <div class="row g-3">
-    <div class="col-lg-4">
-      <div class="card p-3">
-        <h2 class="h6 fw-bold mb-3">⚙ New Topic (EN + HI pair)</h2>
-        <form method="post" action="/api/topics/create">
+    <div class="col-lg-5">
+      <div class="card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 fw-bold mb-0">⚙ New Topic (EN + HI pair)</h2>
+          <button class="btn btn-sm btn-outline-light-subtle" type="button" id="suggestBtn"
+                  disabled={!llmReady}
+                  title={llmReady ? `Uses ${activeProvider} — change in Settings` : 'Add an LLM key in Settings first'}>
+            💡 Suggest Topics
+          </button>
+        </div>
+        <div id="suggestStatus" class="small text-secondary d-none mb-2">
+          Fetching trends &amp; asking {activeProvider}… (takes ~10–20s)
+        </div>
+        <div id="suggestions"></div>
+        <form method="post" action="/api/topics/create" id="topicForm">
           <div class="mb-2">
             <label class="form-label small">Slug</label>
-            <input class="form-control mono" name="slug" pattern="[a-z0-9-]+" placeholder="monsoon-battery-care" required />
+            <input class="form-control mono" name="slug" id="f_slug" pattern="[a-z0-9-]+" placeholder="monsoon-battery-care" required />
           </div>
           <div class="mb-2">
             <label class="form-label small">English title</label>
-            <input class="form-control" name="title_en" required />
+            <input class="form-control" name="title_en" id="f_title_en" required />
           </div>
           <div class="mb-2">
             <label class="form-label small">Hindi title</label>
-            <input class="form-control" name="title_hi" required />
+            <input class="form-control" name="title_hi" id="f_title_hi" required />
           </div>
           <div class="mb-2">
             <label class="form-label small">Category</label>
-            <input class="form-control" name="category" placeholder="e.g. Ownership" required />
+            <select class="form-select" name="category" id="f_category" required>
+              <option value="" disabled selected>— Select category —</option>
+              {categories.map((c) => <option value={c}>{c}</option>)}
+            </select>
           </div>
           <div class="mb-2">
             <label class="form-label small">Editorial angle</label>
-            <textarea class="form-control" name="angle" rows="3"
+            <textarea class="form-control" name="angle" id="f_angle" rows="3"
               placeholder="Be specific: audience + the one question the article answers."></textarea>
           </div>
           <div class="mb-3">
             <label class="form-label small">Hero image scene</label>
-            <textarea class="form-control" name="image_prompt" rows="2"
+            <textarea class="form-control" name="image_prompt" id="f_image_prompt" rows="2"
               placeholder="Per-topic scene only — vehicle & style rules are enforced by the engine."></textarea>
           </div>
           <button class="btn btn-accent w-100" type="submit">＋ Queue Topic</button>
         </form>
         <div class="small text-secondary mt-2">
-          Same engine as the weekly cron: dedup, brand-neutrality, originality kill-switch,
-          fact-check, fal.ai hero. Output lands here as a <b>draft</b> for your review.
+          💡 Suggest Topics checks Google Trends (India) + your existing content, then fills the form
+          — or write your own. Same engine gates as the weekly cron; output lands as a <b>draft</b> for review.
         </div>
       </div>
     </div>
 
-    <div class="col-lg-8">
+    <div class="col-lg-7">
       <div class="card p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2 class="h6 fw-bold mb-0">Topics</h2>
@@ -84,12 +106,22 @@ try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
                       {t.status === 'killed-commodity' && `${(t.outcome as any).killReason ?? ''}`.slice(0, 60)}
                       {t.status === 'halted-factcheck' && 'critical fact-check issue'}
                     </td>
-                    <td class="text-end">
-                      {t.status === 'pending' && t.lang === 'en' && (
-                        <form method="post" action="/api/topics/dispatch" style="display:inline">
+                    <td class="text-end text-nowrap">
+                      {t.status === 'pending' && (
+                        <form method="post" action="/api/topics/draft" style="display:inline">
                           <input type="hidden" name="slug" value={t.slug} />
-                          <button class="btn btn-sm btn-accent" type="submit"
-                            onclick="return confirm('Run the AI engine for this topic (EN + HI)?')">▶ Generate</button>
+                          <input type="hidden" name="lang" value={t.lang} />
+                          <button class="btn btn-sm btn-accent" type="submit" disabled={!llmReady}
+                            title={llmReady ? 'Generate the article now with the active LLM' : 'Add an LLM key in Settings'}
+                            onclick="this.textContent='Writing… ~30s'; ">⚡ Draft with AI</button>
+                        </form>
+                      )}
+                      {t.status === 'pending' && t.lang === 'en' && engineReady && (
+                        <form method="post" action="/api/topics/dispatch" style="display:inline" class="ms-1">
+                          <input type="hidden" name="slug" value={t.slug} />
+                          <button class="btn btn-sm btn-outline-light-subtle" type="submit"
+                            title="Full pipeline in GitHub Actions: all gates + hero images, EN+HI"
+                            onclick="return confirm('Run the full engine for this topic (EN + HI)?')">▶ Engine</button>
                         </form>
                       )}
                       {t.status === 'drafted' && t.article_id && (
@@ -103,10 +135,61 @@ try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
           </div>
         )}
         <div class="small text-secondary mt-2">
-          A run takes a few minutes (two model passes + two hero images). Refresh this page,
-          or check the Actions link, to see status move from <b>pending</b> → <b>drafted</b>.
+          A run takes a few minutes (two model passes + two hero images). Refresh this page to see
+          status move from <b>pending</b> → <b>drafted</b>.
         </div>
       </div>
     </div>
   </div>
+
+  <script>
+    const btn = document.getElementById('suggestBtn');
+    const status = document.getElementById('suggestStatus');
+    const box = document.getElementById('suggestions');
+
+    btn?.addEventListener('click', async () => {
+      btn.setAttribute('disabled', 'true');
+      status.classList.remove('d-none');
+      box.innerHTML = '';
+      try {
+        const res = await fetch('/api/topics/suggest', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'suggestion failed');
+
+        box.innerHTML = data.suggestions.map((s, i) => `
+          <div class="card p-2 mb-2" style="background:#0e131d">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <div class="fw-semibold small">${esc(s.title_en)}</div>
+                <div class="small"><span class="badge status-pending">${esc(s.category)}</span>
+                  <span class="text-secondary">${esc(s.why)}</span></div>
+              </div>
+              <button class="btn btn-sm btn-accent flex-shrink-0" data-i="${i}">Use This →</button>
+            </div>
+          </div>`).join('') +
+          `<div class="small text-secondary mb-2">Click "Use This" to fill the form, review, then Queue.</div>`;
+
+        box.querySelectorAll('button[data-i]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const s = data.suggestions[Number(b.dataset.i)];
+            for (const [id, val] of [
+              ['f_slug', s.slug], ['f_title_en', s.title_en], ['f_title_hi', s.title_hi],
+              ['f_category', s.category], ['f_angle', s.angle], ['f_image_prompt', s.image_prompt],
+            ]) document.getElementById(id).value = val;
+            document.getElementById('f_slug').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+        });
+      } catch (e) {
+        box.innerHTML = `<div class="alert alert-danger py-2 small">${esc(e.message)}</div>`;
+      } finally {
+        btn.removeAttribute('disabled');
+        status.classList.add('d-none');
+      }
+    });
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+  </script>
 </AdminLayout>

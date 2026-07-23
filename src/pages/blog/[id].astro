@@ -1,6 +1,9 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { sql, type Article } from '../../lib/db';
+import { getSetting } from '../../lib/settings';
+import { IMAGE_MODELS, getFalKey } from '../../lib/llm';
+import { getCategories } from '../../lib/categories';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -34,6 +37,16 @@ if (!isNew && article.slug) {
 
 const saved = Astro.url.searchParams.get('saved');
 const err = Astro.url.searchParams.get('err');
+
+// AI hero generation: model list + default (Settings → "Default image model",
+// falling back to the best-quality model).
+const falReady = Boolean(await getFalKey());
+const defaultImageModel = (await getSetting('image_model')) || IMAGE_MODELS.find((m) => m.best)!.id;
+
+// Category dropdown from the DB; keep a legacy value selectable if the article
+// has one that's no longer in the categories table.
+const categories = await getCategories();
+if (article.category && !categories.includes(article.category)) categories.unshift(article.category);
 ---
 <AdminLayout title={isNew ? 'New Article' : `Edit: ${article.title}`} active="blog" sub={isNew ? 'Create a blog article' : `/${article.slug} (${article.lang})`}>
   {saved && <div class="alert alert-success py-2 small">Saved.</div>}
@@ -51,7 +64,10 @@ const err = Astro.url.searchParams.get('err');
             </div>
             <div class="col-md-4">
               <label class="form-label small">Category</label>
-              <input class="form-control" name="category" value={article.category} placeholder="e.g. Charging" />
+              <select class="form-select" name="category">
+                <option value="" disabled selected={!article.category}>— Select category —</option>
+                {categories.map((c) => <option value={c} selected={c === article.category}>{c}</option>)}
+              </select>
             </div>
             <div class="col-md-8">
               <label class="form-label small">Slug</label>
@@ -108,8 +124,29 @@ const err = Astro.url.searchParams.get('err');
           ) : (
             <p class="small text-secondary">No hero yet.</p>
           )}
+          <label class="form-label small mb-1">Upload your own</label>
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
-          <div class="small text-secondary mt-1">Uploaded to Vercel Blob, resized to 1200×675 WebP.</div>
+          <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
+
+          {!isNew && (
+            <div class="border-top border-secondary-subtle pt-2">
+              <label class="form-label small fw-bold mb-1">🎨 Generate with AI</label>
+              <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="2"
+                placeholder="Describe the SCENE (vehicle & style rules are added automatically)"></textarea>
+              <label class="form-label small mb-1">Image model</label>
+              <select class="form-select form-select-sm mb-2" name="image_model" form="genheroForm">
+                {IMAGE_MODELS.map((m) => (
+                  <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+                ))}
+              </select>
+              <button class="btn btn-outline-light-subtle btn-sm w-100" type="submit" form="genheroForm"
+                disabled={!falReady}
+                onclick="this.textContent='Generating… (~20s)'; ">
+                {falReady ? '🎨 Generate Hero' : 'Add fal.ai key in Settings first'}
+              </button>
+              <div class="small text-secondary mt-1">Generates 16:9, brands it (1200×675 + logo), saves to this article.</div>
+            </div>
+          )}
         </div>
 
         {!isNew && (
@@ -131,4 +168,12 @@ const err = Astro.url.searchParams.get('err');
       </div>
     </div>
   </form>
+
+  {!isNew && (
+    // Separate form for AI hero generation — referenced via form="genheroForm"
+    // by the controls inside the hero card (HTML forms cannot nest).
+    <form id="genheroForm" method="post" action="/api/blog/genhero">
+      <input type="hidden" name="id" value={String(article.id)} />
+    </form>
+  )}
 </AdminLayout>
