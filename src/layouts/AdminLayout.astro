@@ -10,11 +10,11 @@ interface Props {
 const { title, active = '', sub = 'EV Chandigarh admin' } = Astro.props;
 
 const nav = [
-  { key: 'dashboard', href: '/', icon: '▦', label: 'Dashboard' },
-  { key: 'blog', href: '/blog', icon: '✎', label: 'Blog CMS' },
-  { key: 'generator', href: '/generator', icon: '🤖', label: 'AI Generator' },
-  { key: 'site-pages', href: '/site-pages', icon: '🗎', label: 'Site Pages' },
-  { key: 'settings', href: '/settings', icon: '🔑', label: 'Settings' },
+  { key: 'dashboard', href: '/admin/', icon: '▦', label: 'Dashboard' },
+  { key: 'blog', href: '/admin/blog', icon: '✎', label: 'Blog CMS' },
+  { key: 'generator', href: '/admin/generator', icon: '🤖', label: 'AI Generator' },
+  { key: 'site-pages', href: '/admin/site-pages', icon: '🗎', label: 'Site Pages' },
+  { key: 'settings', href: '/admin/settings', icon: '🔑', label: 'Settings' },
 ];
 ---
 <html lang="en" data-bs-theme="dark">
@@ -27,14 +27,14 @@ const nav = [
   <body>
     <div class="admin-shell">
       <aside class="sidebar">
-        <a class="brand" href="/"><span class="mark">⚡</span> EVChd Admin</a>
+        <a class="brand" href="/admin/"><span class="mark">⚡</span> EVChd Admin</a>
         {nav.map((n) => (
           <a class={`nav-item ${active === n.key ? 'active' : ''}`} href={n.href}>
             <span>{n.icon}</span> {n.label}
           </a>
         ))}
         <div class="spacer"></div>
-        <a class="nav-item signout" href="/api/logout">⏻ Sign out</a>
+        <a class="nav-item signout" href="/admin/api/logout">⏻ Sign out</a>
       </aside>
       <main class="main">
         <div class="page-band">

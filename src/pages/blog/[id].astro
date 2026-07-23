@@ -22,7 +22,7 @@ let article: Partial<Article> = {
 
 if (!isNew) {
   const rows = (await sql()`SELECT * FROM articles WHERE id = ${Number(id)}`) as unknown as Article[];
-  if (!rows.length) return Astro.redirect('/blog');
+  if (!rows.length) return Astro.redirect('/admin/blog');
   article = rows[0];
 }
 
@@ -67,7 +67,7 @@ if (article.category && !categories.includes(article.category)) categories.unshi
   {saved && <div class="alert alert-success py-2 small">Saved.</div>}
   {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
 
-  <form method="post" action="/api/blog/save" enctype="multipart/form-data">
+  <form method="post" action="/admin/api/blog/save" enctype="multipart/form-data">
     <input type="hidden" name="id" value={isNew ? '' : String(article.id)} />
     <div class="row g-3">
       <div class="col-lg-8">
@@ -166,7 +166,7 @@ if (article.category && !categories.includes(article.category)) categories.unshi
             ) : !imagesReady ? (
               <div class="alert alert-warning py-2 small mb-0">
                 Image generation needs an <b>OpenAI</b> or <b>Gemini</b> key —
-                <a href="/settings">add one in Settings</a>.
+                <a href="/admin/settings">add one in Settings</a>.
               </div>
             ) : (
               <>
@@ -190,12 +190,12 @@ if (article.category && !categories.includes(article.category)) categories.unshi
           <div class="card p-3">
             <h2 class="h6 fw-bold">Translation pair</h2>
             {counterpart ? (
-              <a class="btn btn-outline-light-subtle btn-sm w-100" href={`/blog/${counterpart.id}`}>
+              <a class="btn btn-outline-light-subtle btn-sm w-100" href={`/admin/blog/${counterpart.id}`}>
                 Edit {article.lang === 'hi' ? 'English' : 'Hindi'} version
               </a>
             ) : (
               <a class="btn btn-outline-light-subtle btn-sm w-100"
-                 href={`/blog/new?slug=${article.slug}&lang=${article.lang === 'hi' ? 'en' : 'hi'}`}>
+                 href={`/admin/blog/new?slug=${article.slug}&lang=${article.lang === 'hi' ? 'en' : 'hi'}`}>
                 ＋ Create {article.lang === 'hi' ? 'English' : 'Hindi'} counterpart
               </a>
             )}
@@ -209,7 +209,7 @@ if (article.category && !categories.includes(article.category)) categories.unshi
   {!isNew && (
     // Separate form for AI hero generation — referenced via form="genheroForm"
     // by the controls inside the hero card (HTML forms cannot nest).
-    <form id="genheroForm" method="post" action="/api/blog/genhero">
+    <form id="genheroForm" method="post" action="/admin/api/blog/genhero">
       <input type="hidden" name="id" value={String(article.id)} />
     </form>
   )}
@@ -226,7 +226,7 @@ if (article.category && !categories.includes(article.category)) categories.unshi
         btn.disabled = true;
         statusEl.textContent = 'Generating… (~20s)';
         try {
-          const res = await fetch('/api/blog/genimage', {
+          const res = await fetch('/admin/api/blog/genimage', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ id: articleId, prompt, image_model: model }),

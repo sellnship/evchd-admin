@@ -21,11 +21,11 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       VALUES (${slug}, 'en', ${titleEn}, ${category}, ${imagePrompt}, ${angle}),
              (${slug}, 'hi', ${titleHi}, ${category}, ${imagePrompt}, ${angle})`;
     await logActivity('topic.create', { slug });
-    return redirect(`/generator?ok=${encodeURIComponent(`Topic "${slug}" queued (EN + HI).`)}`);
+    return redirect(`/admin/generator?ok=${encodeURIComponent(`Topic "${slug}" queued (EN + HI).`)}`);
   } catch (e: any) {
     const msg = /duplicate key|unique/i.test(String(e?.message))
       ? `topic "${slug}" already exists`
       : e?.message ?? 'unknown error';
-    return redirect(`/generator?err=${encodeURIComponent(msg)}`);
+    return redirect(`/admin/generator?err=${encodeURIComponent(msg)}`);
   }
 };

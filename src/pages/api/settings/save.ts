@@ -31,5 +31,5 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
   // Log key NAMES only — never values.
   await logActivity('settings.update', { keys: changed.filter((k) => !k.endsWith('_key')) });
-  return redirect('/settings?ok=1');
+  return redirect('/admin/settings?ok=1');
 };

@@ -50,7 +50,7 @@ const done = Astro.url.searchParams.get('committed');
                 <td class="small">{f.section}</td>
                 <td><span class={`badge lang-${f.lang}`}>{f.lang.toUpperCase()}</span></td>
                 <td class="text-end">
-                  <a class="btn btn-sm btn-outline-light-subtle" href={`/site-pages/edit?path=${encodeURIComponent(f.path)}`}>Edit</a>
+                  <a class="btn btn-sm btn-outline-light-subtle" href={`/admin/site-pages/edit?path=${encodeURIComponent(f.path)}`}>Edit</a>
                 </td>
               </tr>
             ))}

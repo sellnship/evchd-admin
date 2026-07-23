@@ -44,14 +44,14 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
           </div>
         ) : (
           <div class="alert alert-warning py-2 small mb-2">
-            No LLM key configured — <a href="/settings">add one in Settings</a> to enable AI features.
+            No LLM key configured — <a href="/admin/settings">add one in Settings</a> to enable AI features.
           </div>
         )}
         <div id="suggestStatus" class="small text-secondary d-none mb-2">
           Fetching trends &amp; asking the model… (takes ~10–20s)
         </div>
         <div id="suggestions"></div>
-        <form method="post" action="/api/topics/create" id="topicForm">
+        <form method="post" action="/admin/api/topics/create" id="topicForm">
           <div class="mb-2">
             <label class="form-label small">Slug</label>
             <input class="form-control mono" name="slug" id="f_slug" pattern="[a-z0-9-]+" placeholder="monsoon-battery-care" required />
@@ -118,7 +118,7 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
                     </td>
                     <td class="text-end text-nowrap">
                       {t.status === 'pending' && (
-                        <form method="post" action="/api/topics/draft" style="display:inline" class="draft-form">
+                        <form method="post" action="/admin/api/topics/draft" style="display:inline" class="draft-form">
                           <input type="hidden" name="slug" value={t.slug} />
                           <input type="hidden" name="lang" value={t.lang} />
                           <input type="hidden" name="provider" value={activeProvider} />
@@ -128,7 +128,7 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
                         </form>
                       )}
                       {t.status === 'pending' && t.lang === 'en' && engineReady && (
-                        <form method="post" action="/api/topics/dispatch" style="display:inline" class="ms-1">
+                        <form method="post" action="/admin/api/topics/dispatch" style="display:inline" class="ms-1">
                           <input type="hidden" name="slug" value={t.slug} />
                           <button class="btn btn-sm btn-outline-light-subtle" type="submit"
                             title="Full pipeline in GitHub Actions: all gates + hero images, EN+HI"
@@ -136,7 +136,7 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
                         </form>
                       )}
                       {t.status === 'drafted' && t.article_id && (
-                        <a class="btn btn-sm btn-success" href={`/blog/${t.article_id}`}>Review draft</a>
+                        <a class="btn btn-sm btn-success" href={`/admin/blog/${t.article_id}`}>Review draft</a>
                       )}
                     </td>
                   </tr>
@@ -164,7 +164,7 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
       box.innerHTML = '';
       try {
         const provider = document.getElementById('f_provider')?.value;
-        const res = await fetch('/api/topics/suggest', {
+        const res = await fetch('/admin/api/topics/suggest', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ provider }),

@@ -75,8 +75,8 @@ Reply with ONLY the article markdown.`;
     await logActivity('article.drafted', { slug, lang, via: 'admin-llm' });
 
     // Straight into the editor: review, generate the hero, then publish.
-    return redirect(`/blog/${rows[0].id}?saved=1`);
+    return redirect(`/admin/blog/${rows[0].id}?saved=1`);
   } catch (e: any) {
-    return redirect(`/generator?err=${encodeURIComponent(e?.message ?? 'draft failed')}`);
+    return redirect(`/admin/generator?err=${encodeURIComponent(e?.message ?? 'draft failed')}`);
   }
 };

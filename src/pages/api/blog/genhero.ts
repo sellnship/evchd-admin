@@ -46,8 +46,8 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
     await sql()`UPDATE articles SET hero_image = ${blob.url}, updated_at = now() WHERE id = ${Number(id)}`;
     await logActivity('hero.generate', { slug, lang, model: modelId });
-    return redirect(`/blog/${id}?saved=1`);
+    return redirect(`/admin/blog/${id}?saved=1`);
   } catch (e: any) {
-    return redirect(`/blog/${id || 'new'}?err=${encodeURIComponent(e?.message ?? 'hero generation failed')}`);
+    return redirect(`/admin/blog/${id || 'new'}?err=${encodeURIComponent(e?.message ?? 'hero generation failed')}`);
   }
 };

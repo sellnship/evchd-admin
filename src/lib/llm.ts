@@ -24,6 +24,7 @@ export const PROVIDERS: Provider[] = [
   { id: 'groq', label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', keyHint: 'console.groq.com → API Keys', envVar: 'GROQ_API_KEY' },
   { id: 'gemini', label: 'Google Gemini', defaultModel: 'gemini-2.5-flash', keyHint: 'aistudio.google.com → Get API Key', envVar: 'GEMINI_API_KEY' },
   { id: 'xai', label: 'Grok (xAI)', defaultModel: 'grok-3', keyHint: 'console.x.ai → API Keys', envVar: 'XAI_API_KEY' },
+  { id: 'edenai', label: 'Eden AI (aggregator)', defaultModel: 'openai/gpt-4o', keyHint: 'app.edenai.run → API keys — model format: provider/model', envVar: 'EDENAI_API_KEY' },
 ];
 
 export async function getProviderKey(id: string): Promise<string> {
@@ -131,6 +132,18 @@ export async function complete(
     }
   }
 
+  if (providerId === 'edenai') {
+    // Eden AI's OpenAI-compatible unified endpoint; model = "provider/model".
+    const res = await fetch('https://api.edenai.run/v2/llm/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens }),
+    });
+    if (!res.ok) throw apiError('edenai', res.status, await res.text());
+    const j = await res.json();
+    return j.choices?.[0]?.message?.content ?? '';
+  }
+
   if (providerId === 'gemini') {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
@@ -173,7 +186,7 @@ export function extractJSON<T>(text: string): T {
 
 export interface ImageModel {
   id: string;
-  provider: 'openai' | 'gemini';
+  provider: 'openai' | 'gemini' | 'edenai';
   label: string;
   best?: boolean; // default selection when its provider is configured
 }
@@ -184,6 +197,7 @@ export const IMAGE_MODELS: ImageModel[] = [
   { id: 'gemini-2.5-flash-image', provider: 'gemini', label: 'Gemini 2.5 Flash Image (Nano Banana)' },
   { id: 'imagen-4.0-generate-001', provider: 'gemini', label: 'Imagen 4 (Gemini API)' },
   { id: 'dall-e-3', provider: 'openai', label: 'DALL·E 3 (OpenAI)' },
+  { id: 'edenai-openai', provider: 'edenai', label: 'Eden AI — OpenAI images (aggregator)' },
 ];
 
 /** Image models whose provider has a key configured. */
@@ -234,6 +248,26 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
       return Buffer.from(await img.arrayBuffer());
     }
     throw new Error('OpenAI images: unexpected response shape');
+  }
+
+  if (model.provider === 'edenai') {
+    const res = await fetch('https://api.edenai.run/v2/image/generation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({ providers: 'openai', text: prompt, resolution: '1024x1024' }),
+    });
+    if (!res.ok) throw apiError('edenai', res.status, await res.text());
+    const j = await res.json();
+    const r = j.openai ?? Object.values(j)[0];
+    if (r?.status === 'fail') throw new Error(`Eden AI: ${r?.error?.message ?? 'image generation failed'}`);
+    const item = r?.items?.[0];
+    if (item?.image) return Buffer.from(item.image, 'base64');
+    if (item?.image_resource_url) {
+      const img = await fetch(item.image_resource_url);
+      if (!img.ok) throw new Error(`image download failed: HTTP ${img.status}`);
+      return Buffer.from(await img.arrayBuffer());
+    }
+    throw new Error('Eden AI: unexpected response shape');
   }
 
   // Gemini API — two shapes: Imagen via :predict, Flash Image via generateContent.

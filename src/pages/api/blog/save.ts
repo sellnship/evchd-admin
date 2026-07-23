@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     .map((t) => t.trim())
     .filter(Boolean);
 
-  const back = (aid: string, qs: string) => redirect(`/blog/${aid}?${qs}`);
+  const back = (aid: string, qs: string) => redirect(`/admin/blog/${aid}?${qs}`);
 
   try {
     if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('slug must be lowercase letters/digits/hyphens');

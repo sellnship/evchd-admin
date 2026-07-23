@@ -6,7 +6,10 @@ import vercel from '@astrojs/vercel';
 
 export default defineConfig({
   output: 'server',
-  // maxDuration: AI routes (hero generation via fal.ai, topic suggestions via
-  // LLM) can take 20-60s — well past the default function timeout.
+  // Served at www.evchandigarh.in/admin via a rewrite in the main site's
+  // vercel.json — every route/link/redirect lives under this base.
+  base: '/admin',
+  // maxDuration: AI routes (image generation, topic suggestions via LLM) can
+  // take 20-60s — well past the default function timeout.
   adapter: vercel({ maxDuration: 60 }),
 });

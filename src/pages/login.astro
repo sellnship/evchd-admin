@@ -20,7 +20,7 @@ const err = Astro.url.searchParams.get('err');
           <div class="text-secondary small">Sign in to manage the blog</div>
         </div>
         {err && <div class="alert alert-danger py-2 small">Wrong email or password.</div>}
-        <form method="post" action="/api/login">
+        <form method="post" action="/admin/api/login">
           <div class="mb-3">
             <label class="form-label small">Email</label>
             <input class="form-control" type="email" name="email" required autocomplete="username" />

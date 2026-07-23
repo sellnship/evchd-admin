@@ -13,11 +13,11 @@ const fmt = (d: string | null) =>
 <AdminLayout title="Blog CMS" active="blog" sub={`${rows.length} article(s)`}>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div class="btn-group">
-      <a class={`btn btn-sm ${!flt ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/blog">All</a>
-      <a class={`btn btn-sm ${flt === 'published' ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/blog?status=published">Published</a>
-      <a class={`btn btn-sm ${flt === 'draft' ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/blog?status=draft">Drafts</a>
+      <a class={`btn btn-sm ${!flt ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/admin/blog">All</a>
+      <a class={`btn btn-sm ${flt === 'published' ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/admin/blog?status=published">Published</a>
+      <a class={`btn btn-sm ${flt === 'draft' ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/admin/blog?status=draft">Drafts</a>
     </div>
-    <a class="btn btn-accent btn-sm" href="/blog/new">＋ New Article</a>
+    <a class="btn btn-accent btn-sm" href="/admin/blog/new">＋ New Article</a>
   </div>
 
   <div class="card p-3">
@@ -40,7 +40,7 @@ const fmt = (d: string | null) =>
                 <td class="small text-secondary">{a.source}</td>
                 <td class="small text-secondary">{fmt(a.date_published)}</td>
                 <td class="text-end">
-                  <a class="btn btn-sm btn-outline-light-subtle" href={`/blog/${a.id}`}>Edit</a>
+                  <a class="btn btn-sm btn-outline-light-subtle" href={`/admin/blog/${a.id}`}>Edit</a>
                 </td>
               </tr>
             ))}

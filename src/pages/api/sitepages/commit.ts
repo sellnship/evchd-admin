@@ -13,7 +13,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     if (!sha) throw new Error('missing file sha');
     await putFile(path, content, sha, `content: edit ${path.split('/').pop()} via admin`);
     await logActivity('sitepage.commit', { path });
-    return redirect('/site-pages?committed=1');
+    return redirect('/admin/site-pages?committed=1');
   } catch (e: any) {
     return redirect(
       `/site-pages/edit?path=${encodeURIComponent(path)}&err=${encodeURIComponent(e?.message ?? 'commit failed')}`,

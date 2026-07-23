@@ -6,7 +6,7 @@ export const POST: APIRoute = async ({ request, cookies, redirect, url }) => {
   const email = String(form.get('email') ?? '');
   const password = String(form.get('password') ?? '');
 
-  if (!checkCredentials(email, password)) return redirect('/login?err=1');
+  if (!checkCredentials(email, password)) return redirect('/admin/login?err=1');
 
   cookies.set(COOKIE_NAME, makeToken(), {
     httpOnly: true,
@@ -15,5 +15,5 @@ export const POST: APIRoute = async ({ request, cookies, redirect, url }) => {
     path: '/',
     maxAge: 7 * 24 * 3600,
   });
-  return redirect('/');
+  return redirect('/admin/');
 };

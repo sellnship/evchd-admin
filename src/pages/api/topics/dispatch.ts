@@ -13,8 +13,8 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
     await dispatchBlogWorkflow(slug);
     await logActivity('topic.dispatch', { slug });
-    return redirect(`/generator?ok=${encodeURIComponent(`Engine dispatched for "${slug}" — drafts appear in a few minutes.`)}`);
+    return redirect(`/admin/generator?ok=${encodeURIComponent(`Engine dispatched for "${slug}" — drafts appear in a few minutes.`)}`);
   } catch (e: any) {
-    return redirect(`/generator?err=${encodeURIComponent(e?.message ?? 'dispatch failed')}`);
+    return redirect(`/admin/generator?err=${encodeURIComponent(e?.message ?? 'dispatch failed')}`);
   }
 };
