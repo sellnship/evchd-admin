@@ -38,8 +38,12 @@ async function fetchTrends(): Promise<string[]> {
   }
 }
 
-export const POST: APIRoute = async () => {
+export const POST: APIRoute = async ({ request }) => {
   try {
+    // Optional provider override from the generator page's model dropdown.
+    let provider: string | undefined;
+    try { provider = (await request.json())?.provider; } catch { /* empty body is fine */ }
+
     const q = sql();
     const existing = (await q`
       SELECT slug, title FROM articles WHERE lang = 'en'
@@ -67,12 +71,12 @@ Suggest 5 blog topics. Reply with ONLY a JSON array, each item exactly:
   "why": "one sentence on why this topic, right now"
 }`;
 
-    const raw = await complete(prompt, { maxTokens: 3000 });
+    const raw = await complete(prompt, { maxTokens: 3000, provider });
     const suggestions = extractJSON<Suggestion[]>(raw);
     if (!Array.isArray(suggestions) || !suggestions.length) throw new Error('model returned no suggestions');
 
     return new Response(
-      JSON.stringify({ provider: await getActiveProvider(), trends: trends.length > 0, suggestions }),
+      JSON.stringify({ provider: provider ?? (await getActiveProvider()), trends: trends.length > 0, suggestions }),
       { headers: { 'content-type': 'application/json' } },
     );
   } catch (e: any) {

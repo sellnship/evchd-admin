@@ -2,7 +2,7 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { sql, type Topic } from '../../lib/db';
 import { actionsUrl } from '../../lib/github';
-import { getActiveProvider, getProviderKey } from '../../lib/llm';
+import { getActiveProvider, getConfiguredProviders } from '../../lib/llm';
 import { getCategories } from '../../lib/categories';
 import { env } from '../../lib/env';
 
@@ -17,8 +17,11 @@ const err = Astro.url.searchParams.get('err');
 let ghUrl = '#';
 try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
 
+// LLM dropdown: every provider with a key, best-ranked first; preselect the
+// active one (which itself falls back to the best configured provider).
+const configured = await getConfiguredProviders();
 const activeProvider = await getActiveProvider();
-const llmReady = Boolean(await getProviderKey(activeProvider));
+const llmReady = configured.length > 0;
 const categories = await getCategories();
 const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the PAT
 ---
@@ -29,16 +32,23 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
   <div class="row g-3">
     <div class="col-lg-5">
       <div class="card p-3 mb-3">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h6 fw-bold mb-0">⚙ New Topic (EN + HI pair)</h2>
-          <button class="btn btn-sm btn-outline-light-subtle" type="button" id="suggestBtn"
-                  disabled={!llmReady}
-                  title={llmReady ? `Uses ${activeProvider} — change in Settings` : 'Add an LLM key in Settings first'}>
-            💡 Suggest Topics
-          </button>
-        </div>
+        <h2 class="h6 fw-bold mb-2">⚙ New Topic (EN + HI pair)</h2>
+        {llmReady ? (
+          <div class="d-flex gap-2 align-items-center mb-2">
+            <select class="form-select form-select-sm" id="f_provider" title="LLM used for Suggest & Draft">
+              {configured.map((p) => (
+                <option value={p.id} selected={p.id === activeProvider}>{p.label} — {p.model}</option>
+              ))}
+            </select>
+            <button class="btn btn-sm btn-accent flex-shrink-0" type="button" id="suggestBtn">💡 Suggest Topics</button>
+          </div>
+        ) : (
+          <div class="alert alert-warning py-2 small mb-2">
+            No LLM key configured — <a href="/settings">add one in Settings</a> to enable AI features.
+          </div>
+        )}
         <div id="suggestStatus" class="small text-secondary d-none mb-2">
-          Fetching trends &amp; asking {activeProvider}… (takes ~10–20s)
+          Fetching trends &amp; asking the model… (takes ~10–20s)
         </div>
         <div id="suggestions"></div>
         <form method="post" action="/api/topics/create" id="topicForm">
@@ -108,11 +118,12 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
                     </td>
                     <td class="text-end text-nowrap">
                       {t.status === 'pending' && (
-                        <form method="post" action="/api/topics/draft" style="display:inline">
+                        <form method="post" action="/api/topics/draft" style="display:inline" class="draft-form">
                           <input type="hidden" name="slug" value={t.slug} />
                           <input type="hidden" name="lang" value={t.lang} />
+                          <input type="hidden" name="provider" value={activeProvider} />
                           <button class="btn btn-sm btn-accent" type="submit" disabled={!llmReady}
-                            title={llmReady ? 'Generate the article now with the active LLM' : 'Add an LLM key in Settings'}
+                            title={llmReady ? 'Generate the article now with the selected model' : 'Add an LLM key in Settings'}
                             onclick="this.textContent='Writing… ~30s'; ">⚡ Draft with AI</button>
                         </form>
                       )}
@@ -152,7 +163,12 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
       status.classList.remove('d-none');
       box.innerHTML = '';
       try {
-        const res = await fetch('/api/topics/suggest', { method: 'POST' });
+        const provider = document.getElementById('f_provider')?.value;
+        const res = await fetch('/api/topics/suggest', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider }),
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'suggestion failed');
 
@@ -191,5 +207,12 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
       return String(s ?? '').replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
+
+    // Keep every "Draft with AI" form in sync with the model dropdown.
+    const providerSel = document.getElementById('f_provider');
+    providerSel?.addEventListener('change', () => {
+      document.querySelectorAll('.draft-form input[name="provider"]')
+        .forEach((i) => { i.value = providerSel.value; });
+    });
   </script>
 </AdminLayout>

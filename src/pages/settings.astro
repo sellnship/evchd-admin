@@ -37,8 +37,8 @@ const ok = Astro.url.searchParams.get('ok');
         <label class="small text-secondary">Active provider:</label>
         <select class="form-select form-select-sm w-auto" name="llm_active_provider">
           {providers.map((p) => (
-            <option value={p.id} selected={p.id === activeProvider} disabled={!p.connected && p.id !== activeProvider}>
-              {p.label}{p.connected ? '' : ' (no key)'}
+            <option value={p.id} selected={p.id === activeProvider}>
+              {p.label}{p.connected ? '' : ' (no key yet)'}
             </option>
           ))}
         </select>

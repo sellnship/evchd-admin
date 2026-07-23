@@ -39,9 +39,23 @@ export async function getProviderModel(id: string): Promise<string> {
   return PROVIDERS.find((x) => x.id === id)?.defaultModel ?? '';
 }
 
-/** The provider used for admin-side text generation (topic suggestions etc.). */
+/** Providers that actually have a key, in quality order, with their model. */
+export async function getConfiguredProviders(): Promise<(Provider & { model: string })[]> {
+  const out: (Provider & { model: string })[] = [];
+  for (const p of PROVIDERS) {
+    if (await getProviderKey(p.id)) out.push({ ...p, model: await getProviderModel(p.id) });
+  }
+  return out;
+}
+
+/** The provider used for admin-side text generation. Falls back to the BEST
+ *  configured provider (PROVIDERS order) when the stored choice has no key —
+ *  so adding your first key immediately enables the AI buttons. */
 export async function getActiveProvider(): Promise<string> {
-  return (await getSetting('llm_active_provider')) || 'anthropic';
+  const stored = (await getSetting('llm_active_provider')) || 'anthropic';
+  if (await getProviderKey(stored)) return stored;
+  const configured = await getConfiguredProviders();
+  return configured[0]?.id ?? stored;
 }
 
 /** Mask a stored key for display: prefix + last 4, never the middle. */
@@ -52,12 +66,17 @@ export function maskKey(key: string): string {
 }
 
 /**
- * One text completion against the ACTIVE provider. Returns the raw text.
- * Anthropic goes through the official SDK; OpenAI/Groq/xAI share the
- * chat-completions wire shape; Gemini uses generateContent.
+ * One text completion. `provider` overrides the active/default provider (the
+ * generation UIs pass the user's dropdown choice). Anthropic goes through the
+ * official SDK; OpenAI/Groq/xAI share the chat-completions wire shape; Gemini
+ * uses generateContent.
  */
-export async function complete(prompt: string, { maxTokens = 4000 } = {}): Promise<string> {
-  const providerId = await getActiveProvider();
+export async function complete(
+  prompt: string,
+  { maxTokens = 4000, provider }: { maxTokens?: number; provider?: string } = {},
+): Promise<string> {
+  const providerId =
+    provider && PROVIDERS.some((p) => p.id === provider) ? provider : await getActiveProvider();
   const key = await getProviderKey(providerId);
   const model = await getProviderModel(providerId);
   if (!key) throw new Error(`No API key configured for ${providerId} — add it in Settings`);

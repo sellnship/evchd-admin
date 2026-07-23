@@ -94,7 +94,23 @@ if (article.category && !categories.includes(article.category)) categories.unshi
 
         <div class="card p-3">
           <label class="form-label small fw-bold">Body (Markdown)</label>
-          <textarea class="form-control body-editor" name="body_md">{article.body_md}</textarea>
+          <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
+          {!isNew && falReady && (
+            <div class="border-top border-secondary-subtle pt-2 mt-2">
+              <label class="form-label small fw-bold mb-1">🖼 Insert AI image at cursor</label>
+              <div class="d-flex gap-2">
+                <input class="form-control form-control-sm" id="bodyImgPrompt"
+                       placeholder="Describe the scene for this in-article image" />
+                <select class="form-select form-select-sm w-auto" id="bodyImgModel">
+                  {IMAGE_MODELS.map((m) => (
+                    <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+                  ))}
+                </select>
+                <button class="btn btn-outline-light-subtle btn-sm flex-shrink-0" type="button" id="bodyImgBtn">Generate &amp; Insert</button>
+              </div>
+              <div class="small text-secondary mt-1" id="bodyImgStatus">Generates 16:9 (no watermark), uploads, and inserts the markdown where your cursor is.</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -128,25 +144,31 @@ if (article.category && !categories.includes(article.category)) categories.unshi
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
           <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
 
-          {!isNew && (
-            <div class="border-top border-secondary-subtle pt-2">
-              <label class="form-label small fw-bold mb-1">🎨 Generate with AI</label>
-              <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="2"
-                placeholder="Describe the SCENE (vehicle & style rules are added automatically)"></textarea>
-              <label class="form-label small mb-1">Image model</label>
-              <select class="form-select form-select-sm mb-2" name="image_model" form="genheroForm">
-                {IMAGE_MODELS.map((m) => (
-                  <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
-                ))}
-              </select>
-              <button class="btn btn-outline-light-subtle btn-sm w-100" type="submit" form="genheroForm"
-                disabled={!falReady}
-                onclick="this.textContent='Generating… (~20s)'; ">
-                {falReady ? '🎨 Generate Hero' : 'Add fal.ai key in Settings first'}
-              </button>
-              <div class="small text-secondary mt-1">Generates 16:9, brands it (1200×675 + logo), saves to this article.</div>
-            </div>
-          )}
+          <div class="border-top border-secondary-subtle pt-2">
+            <label class="form-label small fw-bold mb-1">🎨 Generate with AI</label>
+            {isNew ? (
+              <div class="small text-secondary">💾 Save the article once, then generate a hero here.</div>
+            ) : !falReady ? (
+              <div class="alert alert-warning py-2 small mb-0">
+                Image generation needs a fal.ai key — <a href="/settings">add it in Settings</a>
+                (the "fal.ai (Images)" card).
+              </div>
+            ) : (
+              <>
+                <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="2" required
+                  placeholder="Describe the SCENE (vehicle & style rules are added automatically)"></textarea>
+                <label class="form-label small mb-1">Image model</label>
+                <select class="form-select form-select-sm mb-2" name="image_model" form="genheroForm">
+                  {IMAGE_MODELS.map((m) => (
+                    <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+                  ))}
+                </select>
+                <button class="btn btn-accent btn-sm w-100" type="submit" form="genheroForm"
+                  onclick="this.textContent='Generating… (~20s)'; ">🎨 Generate Hero</button>
+                <div class="small text-secondary mt-1">Generates 16:9, brands it (1200×675 + logo), saves to this article.</div>
+              </>
+            )}
+          </div>
         </div>
 
         {!isNew && (
@@ -175,5 +197,38 @@ if (article.category && !categories.includes(article.category)) categories.unshi
     <form id="genheroForm" method="post" action="/api/blog/genhero">
       <input type="hidden" name="id" value={String(article.id)} />
     </form>
+  )}
+
+  {!isNew && falReady && (
+    <script define:vars={{ articleId: article.id }}>
+      const btn = document.getElementById('bodyImgBtn');
+      const statusEl = document.getElementById('bodyImgStatus');
+      btn?.addEventListener('click', async () => {
+        const editor = document.getElementById('bodyEditor');
+        const prompt = document.getElementById('bodyImgPrompt').value.trim();
+        const model = document.getElementById('bodyImgModel').value;
+        if (!prompt) { statusEl.textContent = 'Describe the scene first.'; return; }
+        btn.disabled = true;
+        statusEl.textContent = 'Generating… (~20s)';
+        try {
+          const res = await fetch('/api/blog/genimage', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: articleId, prompt, image_model: model }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'generation failed');
+          const md = `\n\n![${prompt.replace(/[\[\]]/g, '')}](${data.url})\n\n`;
+          const pos = editor.selectionStart ?? editor.value.length;
+          editor.value = editor.value.slice(0, pos) + md + editor.value.slice(pos);
+          statusEl.textContent = '✓ Inserted — remember to 💾 Save.';
+          document.getElementById('bodyImgPrompt').value = '';
+        } catch (e) {
+          statusEl.textContent = '✗ ' + e.message;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    </script>
   )}
 </AdminLayout>

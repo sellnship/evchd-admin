@@ -21,6 +21,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
   const slug = String(form.get('slug') ?? '').trim();
   const lang = String(form.get('lang') ?? 'en') === 'hi' ? 'hi' : 'en';
+  const provider = String(form.get('provider') ?? '') || undefined;
 
   try {
     const q = sql();
@@ -52,7 +53,7 @@ Hard rules:
 
 Reply with ONLY the article markdown.`;
 
-    const body = (await complete(prompt, { maxTokens: 6000 }))
+    const body = (await complete(prompt, { maxTokens: 6000, provider }))
       .replace(/^```(?:markdown)?\s*/i, '')
       .replace(/```\s*$/, '')
       .replace(/^#\s.*$/m, '')
