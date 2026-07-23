@@ -1,0 +1,56 @@
+---
+import 'bootstrap/dist/css/bootstrap.min.css';
+import '../styles/admin.css';
+
+interface Props {
+  title: string;
+  active?: string; // sidebar key: dashboard | blog | generator | site-pages | settings
+  sub?: string;
+}
+const { title, active = '', sub = 'EV Chandigarh admin' } = Astro.props;
+
+const nav = [
+  { key: 'dashboard', href: '/', icon: '▦', label: 'Dashboard' },
+  { key: 'blog', href: '/blog', icon: '✎', label: 'Blog CMS' },
+  { key: 'generator', href: '/generator', icon: '🤖', label: 'AI Generator' },
+  { key: 'site-pages', href: '/site-pages', icon: '🗎', label: 'Site Pages' },
+  { key: 'settings', href: '/settings', icon: '🔑', label: 'Settings' },
+];
+---
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title} — EVChd Admin</title>
+  </head>
+  <body>
+    <div class="admin-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/"><span class="mark">⚡</span> EVChd Admin</a>
+        {nav.map((n) => (
+          <a class={`nav-item ${active === n.key ? 'active' : ''}`} href={n.href}>
+            <span>{n.icon}</span> {n.label}
+          </a>
+        ))}
+        <div class="spacer"></div>
+        <a class="nav-item signout" href="/api/logout">⏻ Sign out</a>
+      </aside>
+      <main class="main">
+        <div class="page-band">
+          <div>
+            <h1>{title}</h1>
+            <div class="sub">{sub}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="text-end d-none d-md-block">
+              <div class="fw-semibold small">Administrator</div>
+            </div>
+            <span class="avatar">A</span>
+          </div>
+        </div>
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>

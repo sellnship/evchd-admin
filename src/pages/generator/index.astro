@@ -1,0 +1,112 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { sql, type Topic } from '../../lib/db';
+import { actionsUrl } from '../../lib/github';
+
+const topics = (await sql()`
+  SELECT t.*, a.id AS article_id
+  FROM topics t
+  LEFT JOIN articles a ON a.slug = t.slug AND a.lang = t.lang
+  ORDER BY t.created_at DESC, t.lang`) as unknown as (Topic & { article_id: number | null })[];
+
+const ok = Astro.url.searchParams.get('ok');
+const err = Astro.url.searchParams.get('err');
+let ghUrl = '#';
+try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
+---
+<AdminLayout title="AI Article Generator" active="generator" sub="Queue a topic → the engine drafts EN + HI with all quality gates">
+  {ok && <div class="alert alert-success py-2 small">{decodeURIComponent(ok)}</div>}
+  {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-3">⚙ New Topic (EN + HI pair)</h2>
+        <form method="post" action="/api/topics/create">
+          <div class="mb-2">
+            <label class="form-label small">Slug</label>
+            <input class="form-control mono" name="slug" pattern="[a-z0-9-]+" placeholder="monsoon-battery-care" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">English title</label>
+            <input class="form-control" name="title_en" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Hindi title</label>
+            <input class="form-control" name="title_hi" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Category</label>
+            <input class="form-control" name="category" placeholder="e.g. Ownership" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Editorial angle</label>
+            <textarea class="form-control" name="angle" rows="3"
+              placeholder="Be specific: audience + the one question the article answers."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Hero image scene</label>
+            <textarea class="form-control" name="image_prompt" rows="2"
+              placeholder="Per-topic scene only — vehicle & style rules are enforced by the engine."></textarea>
+          </div>
+          <button class="btn btn-accent w-100" type="submit">＋ Queue Topic</button>
+        </form>
+        <div class="small text-secondary mt-2">
+          Same engine as the weekly cron: dedup, brand-neutrality, originality kill-switch,
+          fact-check, fal.ai hero. Output lands here as a <b>draft</b> for your review.
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h6 fw-bold mb-0">Topics</h2>
+          <a class="btn btn-sm btn-outline-light-subtle" href={ghUrl} target="_blank" rel="noopener">View Actions runs 🡕</a>
+        </div>
+        {topics.length === 0 ? (
+          <p class="text-secondary small mb-0">No topics yet — queue one on the left.</p>
+        ) : (
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Topic</th><th>Lang</th><th>Status</th><th>Outcome</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                {topics.map((t) => (
+                  <tr>
+                    <td>
+                      <div class="fw-semibold small">{t.title}</div>
+                      <div class="mono text-secondary">{t.slug}</div>
+                    </td>
+                    <td><span class={`badge lang-${t.lang}`}>{t.lang.toUpperCase()}</span></td>
+                    <td><span class={`badge status-${t.status}`}>{t.status}</span></td>
+                    <td class="small text-secondary">
+                      {t.status === 'skipped-dup' && `dup of ${(t.outcome as any).dedupMatch}`}
+                      {t.status === 'killed-commodity' && `${(t.outcome as any).killReason ?? ''}`.slice(0, 60)}
+                      {t.status === 'halted-factcheck' && 'critical fact-check issue'}
+                    </td>
+                    <td class="text-end">
+                      {t.status === 'pending' && t.lang === 'en' && (
+                        <form method="post" action="/api/topics/dispatch" style="display:inline">
+                          <input type="hidden" name="slug" value={t.slug} />
+                          <button class="btn btn-sm btn-accent" type="submit"
+                            onclick="return confirm('Run the AI engine for this topic (EN + HI)?')">▶ Generate</button>
+                        </form>
+                      )}
+                      {t.status === 'drafted' && t.article_id && (
+                        <a class="btn btn-sm btn-success" href={`/blog/${t.article_id}`}>Review draft</a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div class="small text-secondary mt-2">
+          A run takes a few minutes (two model passes + two hero images). Refresh this page,
+          or check the Actions link, to see status move from <b>pending</b> → <b>drafted</b>.
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

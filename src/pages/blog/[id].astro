@@ -1,0 +1,134 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { sql, type Article } from '../../lib/db';
+
+const { id } = Astro.params;
+const isNew = id === 'new';
+
+let article: Partial<Article> = {
+  slug: Astro.url.searchParams.get('slug') ?? '',
+  lang: (Astro.url.searchParams.get('lang') as 'en' | 'hi') ?? 'en',
+  title: '',
+  description: '',
+  category: '',
+  hero_image: '',
+  tags: [],
+  body_md: '',
+  status: 'draft',
+  source: 'manual',
+};
+
+if (!isNew) {
+  const rows = (await sql()`SELECT * FROM articles WHERE id = ${Number(id)}`) as unknown as Article[];
+  if (!rows.length) return Astro.redirect('/blog');
+  article = rows[0];
+}
+
+// EN↔HI pair: same slug, other lang.
+let counterpart: Article | null = null;
+if (!isNew && article.slug) {
+  const other = article.lang === 'hi' ? 'en' : 'hi';
+  const rows = (await sql()`SELECT * FROM articles WHERE slug = ${article.slug} AND lang = ${other}`) as unknown as Article[];
+  counterpart = rows[0] ?? null;
+}
+
+const saved = Astro.url.searchParams.get('saved');
+const err = Astro.url.searchParams.get('err');
+---
+<AdminLayout title={isNew ? 'New Article' : `Edit: ${article.title}`} active="blog" sub={isNew ? 'Create a blog article' : `/${article.slug} (${article.lang})`}>
+  {saved && <div class="alert alert-success py-2 small">Saved.</div>}
+  {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
+
+  <form method="post" action="/api/blog/save" enctype="multipart/form-data">
+    <input type="hidden" name="id" value={isNew ? '' : String(article.id)} />
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="card p-3 mb-3">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label small">Title</label>
+              <input class="form-control" name="title" value={article.title} required />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Category</label>
+              <input class="form-control" name="category" value={article.category} placeholder="e.g. Charging" />
+            </div>
+            <div class="col-md-8">
+              <label class="form-label small">Slug</label>
+              <input class="form-control mono" name="slug" value={article.slug} pattern="[a-z0-9-]+" required readonly={!isNew} />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Language</label>
+              <select class="form-select" name="lang" disabled={!isNew}>
+                <option value="en" selected={article.lang === 'en'}>English</option>
+                <option value="hi" selected={article.lang === 'hi'}>Hindi</option>
+              </select>
+              {!isNew && <input type="hidden" name="lang" value={article.lang} />}
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Description (meta, ≤158 chars)</label>
+              <textarea class="form-control" name="description" rows="2" maxlength="200">{article.description}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Tags (comma-separated)</label>
+              <input class="form-control" name="tags" value={(article.tags ?? []).join(', ')} />
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-3">
+          <label class="form-label small fw-bold">Body (Markdown)</label>
+          <textarea class="form-control body-editor" name="body_md">{article.body_md}</textarea>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card p-3 mb-3">
+          <h2 class="h6 fw-bold">Status</h2>
+          <p class="small mb-2">
+            Current: <span class={`badge status-${article.status}`}>{article.status}</span>
+            {article.source === 'ai' && <span class="badge lang-en ms-1">AI draft</span>}
+          </p>
+          <button class="btn btn-accent w-100 mb-2" type="submit" name="action" value="save">💾 Save</button>
+          {!isNew && article.status === 'draft' && (
+            <button class="btn btn-success w-100 mb-2" type="submit" name="action" value="publish"
+              onclick="return confirm('Publish this article and rebuild the website?')">🚀 Save &amp; Publish</button>
+          )}
+          {!isNew && article.status === 'published' && (
+            <button class="btn btn-outline-light-subtle w-100 mb-2" type="submit" name="action" value="unpublish"
+              onclick="return confirm('Unpublish? The article will disappear from the site on next rebuild.')">Unpublish</button>
+          )}
+          <div class="small text-secondary">Publishing flips the status and fires the Vercel deploy hook — live in ~1–2 min.</div>
+        </div>
+
+        <div class="card p-3 mb-3">
+          <h2 class="h6 fw-bold">Hero image</h2>
+          {article.hero_image ? (
+            <img class="hero-thumb mb-2" src={article.hero_image} alt="hero" />
+          ) : (
+            <p class="small text-secondary">No hero yet.</p>
+          )}
+          <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
+          <div class="small text-secondary mt-1">Uploaded to Vercel Blob, resized to 1200×675 WebP.</div>
+        </div>
+
+        {!isNew && (
+          <div class="card p-3">
+            <h2 class="h6 fw-bold">Translation pair</h2>
+            {counterpart ? (
+              <a class="btn btn-outline-light-subtle btn-sm w-100" href={`/blog/${counterpart.id}`}>
+                Edit {article.lang === 'hi' ? 'English' : 'Hindi'} version
+              </a>
+            ) : (
+              <a class="btn btn-outline-light-subtle btn-sm w-100"
+                 href={`/blog/new?slug=${article.slug}&lang=${article.lang === 'hi' ? 'en' : 'hi'}`}>
+                ＋ Create {article.lang === 'hi' ? 'English' : 'Hindi'} counterpart
+              </a>
+            )}
+            <div class="small text-secondary mt-2">EN &amp; HI share the slug — that's the language-toggle link on the site.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  </form>
+</AdminLayout>

@@ -1,0 +1,67 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { getSetting } from '../lib/settings';
+
+// Presence badges only — values are NEVER echoed to the page.
+const envs = [
+  { name: 'DATABASE_URL', label: 'Neon Postgres', hint: 'articles + topics database' },
+  { name: 'BLOB_READ_WRITE_TOKEN', label: 'Vercel Blob', hint: 'hero image storage' },
+  { name: 'GITHUB_TOKEN', label: 'GitHub PAT', hint: 'site-page edits + engine dispatch' },
+  { name: 'GITHUB_REPO', label: 'GitHub repo', hint: 'owner/name of the site repo' },
+  { name: 'ADMIN_EMAIL', label: 'Admin login', hint: 'ADMIN_EMAIL + ADMIN_PASSWORD + SESSION_SECRET' },
+].map((e) => ({ ...e, set: Boolean(process.env[e.name]) }));
+
+const deployHook = await getSetting('deploy_hook_url');
+const ok = Astro.url.searchParams.get('ok');
+---
+<AdminLayout title="Settings" active="settings" sub="Connections & deploy configuration">
+  {ok && <div class="alert alert-success py-2 small">Saved.</div>}
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card p-3 mb-3">
+        <h2 class="h6 fw-bold mb-3">Connections (env vars)</h2>
+        {envs.map((e) => (
+          <div class="d-flex justify-content-between align-items-center border-bottom border-secondary-subtle py-2">
+            <div>
+              <div class="fw-semibold small">{e.label}</div>
+              <div class="text-secondary small">{e.hint}</div>
+            </div>
+            {e.set
+              ? <span class="badge status-published">✓ Connected</span>
+              : <span class="badge status-failed">Not set</span>}
+          </div>
+        ))}
+        <div class="small text-secondary mt-2">
+          Secrets live in Vercel project env vars (this app) and GitHub Actions secrets (the engine)
+          — they are never stored in the database, and never displayed here.
+        </div>
+      </div>
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-2">Engine keys (GitHub secrets)</h2>
+        <div class="small text-secondary">
+          ANTHROPIC_API_KEY, FAL_KEY, DATABASE_URL and BLOB_READ_WRITE_TOKEN must be set as
+          <b> repository secrets</b> for the <span class="mono">Draft blog article (DB)</span> workflow.
+          Manage them in GitHub → Settings → Secrets and variables → Actions.
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-3">Vercel Deploy Hook</h2>
+        <form method="post" action="/api/settings/save">
+          <label class="form-label small">Deploy hook URL (main site)</label>
+          <input class="form-control mono mb-2" type="url" name="deploy_hook_url"
+                 value={deployHook} placeholder="https://api.vercel.com/v1/integrations/deploy/…" />
+          <button class="btn btn-accent" type="submit">Save</button>
+        </form>
+        <div class="small text-secondary mt-2">
+          Publishing an article POSTs this hook so the static site rebuilds with the new content
+          (~1–2 min). Create it in the <b>main site's</b> Vercel project:
+          Settings → Git → Deploy Hooks → branch <span class="mono">main</span>.
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

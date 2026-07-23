@@ -1,0 +1,36 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getFile } from '../../lib/github';
+
+const path = Astro.url.searchParams.get('path') ?? '';
+// Only markdown under src/content is editable — never workflows, scripts, config.
+if (!/^src\/content\/[\w\-/]+\.md$/.test(path)) return Astro.redirect('/site-pages');
+
+let content = '', sha = '', loadError = '';
+try {
+  ({ content, sha } = await getFile(path));
+} catch (e: any) {
+  loadError = e?.message ?? 'load failed';
+}
+const err = Astro.url.searchParams.get('err');
+---
+<AdminLayout title="Edit Site Page" active="site-pages" sub={path}>
+  {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
+  {loadError ? (
+    <div class="alert alert-danger py-2 small">{loadError}</div>
+  ) : (
+    <form method="post" action="/api/sitepages/commit">
+      <input type="hidden" name="path" value={path} />
+      <input type="hidden" name="sha" value={sha} />
+      <div class="card p-3 mb-3">
+        <label class="form-label small fw-bold">Markdown (frontmatter + body)</label>
+        <textarea class="form-control body-editor" name="content" style="min-height:560px">{content}</textarea>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-accent" type="submit"
+          onclick="return confirm('Commit to main? This deploys to the live site in ~1–2 minutes.')">Commit to main</button>
+        <a class="btn btn-outline-light-subtle" href="/site-pages">Cancel</a>
+      </div>
+    </form>
+  )}
+</AdminLayout>

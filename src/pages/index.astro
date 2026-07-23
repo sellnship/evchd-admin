@@ -1,0 +1,89 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { sql } from '../lib/db';
+
+const q = sql();
+const [counts] = (await q`
+  SELECT
+    (SELECT count(*) FROM articles WHERE status = 'published') AS published,
+    (SELECT count(*) FROM articles WHERE status = 'draft')     AS drafts,
+    (SELECT count(*) FROM topics   WHERE status = 'pending')   AS pending_topics,
+    (SELECT count(*) FROM topics   WHERE status = 'drafted')   AS drafted_topics
+`) as any[];
+const activity = (await q`
+  SELECT at, actor, action, detail FROM activity_log ORDER BY at DESC LIMIT 20`) as any[];
+
+const fmt = (d: string) =>
+  new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+---
+<AdminLayout title="Admin Overview" active="dashboard" sub="Welcome back!">
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card p-3">
+        <span class="icon mb-2">📰</span>
+        <div class="label">Articles Published</div>
+        <div class="value">{counts.published}</div>
+        <div class="foot text-info">Live on /blog</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card p-3">
+        <span class="icon mb-2">📝</span>
+        <div class="label">Drafts Awaiting Review</div>
+        <div class="value">{counts.drafts}</div>
+        <div class="foot text-warning">Review &amp; publish</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card p-3">
+        <span class="icon mb-2">🤖</span>
+        <div class="label">Topics Queued</div>
+        <div class="value">{counts.pending_topics}</div>
+        <div class="foot text-secondary">Pending AI generation</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card stat-card p-3">
+        <span class="icon mb-2">✅</span>
+        <div class="label">Topics Drafted</div>
+        <div class="value">{counts.drafted_topics}</div>
+        <div class="foot text-success">Engine runs done</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-3">Site Activity Feed</h2>
+        {activity.length === 0 ? (
+          <p class="text-secondary small mb-0">No activity yet — publish something!</p>
+        ) : (
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Activity</th><th>Detail</th><th>By</th><th>Date</th></tr></thead>
+              <tbody>
+                {activity.map((a: any) => (
+                  <tr>
+                    <td><span class="badge status-published">{a.action}</span></td>
+                    <td class="mono">{a.detail?.slug ?? ''} {a.detail?.lang ? `(${a.detail.lang})` : ''}</td>
+                    <td class="small text-secondary">{a.actor}</td>
+                    <td class="small text-secondary">{fmt(a.at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-3">Quick Shortcuts</h2>
+        <a class="btn btn-accent w-100 mb-2" href="/blog/new">＋ Create New Article</a>
+        <a class="btn btn-outline-light-subtle w-100 mb-2" href="/generator">🤖 AI Generator</a>
+        <a class="btn btn-outline-light-subtle w-100" href="https://evchandigarh.in/blog" target="_blank" rel="noopener">🡕 View Live Blog</a>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

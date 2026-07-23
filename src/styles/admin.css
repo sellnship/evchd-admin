@@ -1,0 +1,127 @@
+/* Dark red-accent admin theme over Bootstrap 5 (data-bs-theme="dark").
+   Look modelled on the reference: near-black canvas, slate cards, red accent. */
+
+:root,
+[data-bs-theme='dark'] {
+  --bs-body-bg: #0b0e14;
+  --bs-body-color: #d5dbe5;
+  --bs-border-color: #232a37;
+  --accent: #e63946;
+  --accent-hover: #f04a57;
+  --card-bg: #121722;
+  --sidebar-bg: #0e121b;
+  --bs-primary: var(--accent);
+  --bs-primary-rgb: 230, 57, 70;
+  --bs-link-color: #8ab4ff;
+  --bs-link-hover-color: #a9c7ff;
+}
+
+body { min-height: 100vh; }
+
+/* ── Shell: fixed sidebar + fluid main ─────────────────────────────── */
+.admin-shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--bs-border-color);
+  padding: 1.25rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.sidebar .brand {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: #fff;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem 1.1rem;
+}
+.sidebar .brand .mark { color: var(--accent); font-size: 1.2rem; }
+.sidebar a.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  color: #aeb6c4;
+  text-decoration: none;
+  font-size: 0.925rem;
+}
+.sidebar a.nav-item:hover { background: #171d2a; color: #fff; }
+.sidebar a.nav-item.active { background: rgba(230, 57, 70, 0.14); color: var(--accent); font-weight: 600; }
+.sidebar .spacer { flex: 1; }
+.sidebar a.signout { color: var(--accent); }
+
+.main { flex: 1; padding: 1.5rem 1.75rem; max-width: 1240px; }
+
+/* ── Header band ───────────────────────────────────────────────────── */
+.page-band {
+  background: var(--card-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.page-band h1 { font-size: 1.15rem; font-weight: 700; margin: 0; }
+.page-band .sub { color: #8b93a3; font-size: 0.85rem; }
+.avatar {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700;
+}
+
+/* ── Cards / stats ─────────────────────────────────────────────────── */
+.card { background: var(--card-bg); border: 1px solid var(--bs-border-color); border-radius: 0.75rem; }
+.stat-card .icon {
+  width: 44px; height: 44px; border-radius: 0.6rem;
+  background: rgba(230, 57, 70, 0.14); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem;
+}
+.stat-card .label { color: #8b93a3; font-size: 0.85rem; }
+.stat-card .value { font-size: 1.8rem; font-weight: 800; color: #fff; }
+.stat-card .foot { font-size: 0.8rem; }
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.btn-accent { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+.btn-outline-light-subtle { border: 1px solid var(--bs-border-color); color: #d5dbe5; }
+.btn-outline-light-subtle:hover { background: #171d2a; color: #fff; }
+
+/* ── Tables ────────────────────────────────────────────────────────── */
+.table { --bs-table-bg: transparent; }
+.table thead th { color: #8b93a3; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.status-published, .badge.status-drafted { background: rgba(64, 192, 87, 0.16); color: #57d06c; }
+.badge.status-draft, .badge.status-pending { background: rgba(255, 200, 60, 0.14); color: #ffc83c; }
+.badge.status-skipped-dup, .badge.status-killed-commodity,
+.badge.status-halted-factcheck, .badge.status-failed { background: rgba(230, 57, 70, 0.15); color: #f27983; }
+.badge.lang-en { background: rgba(138, 180, 255, 0.15); color: #8ab4ff; }
+.badge.lang-hi { background: rgba(190, 140, 255, 0.16); color: #c9a2ff; }
+
+/* ── Forms ─────────────────────────────────────────────────────────── */
+.form-control, .form-select {
+  background: #0e131d; border-color: var(--bs-border-color); color: #e6ebf2;
+}
+.form-control:focus, .form-select:focus {
+  background: #0e131d; color: #e6ebf2;
+  border-color: var(--accent); box-shadow: 0 0 0 0.2rem rgba(230, 57, 70, 0.2);
+}
+textarea.body-editor { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 0.85rem; min-height: 420px; }
+
+/* ── Login ─────────────────────────────────────────────────────────── */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.login-card { width: 100%; max-width: 400px; }
+
+.hero-thumb { width: 132px; height: 74px; object-fit: cover; border-radius: 0.4rem; border: 1px solid var(--bs-border-color); }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; }
