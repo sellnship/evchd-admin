@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
 import { getSetting } from '../lib/settings';
+import { env } from '../lib/env';
 
 // Presence badges only — values are NEVER echoed to the page.
 const envs = [
@@ -9,7 +10,7 @@ const envs = [
   { name: 'GITHUB_TOKEN', label: 'GitHub PAT', hint: 'site-page edits + engine dispatch' },
   { name: 'GITHUB_REPO', label: 'GitHub repo', hint: 'owner/name of the site repo' },
   { name: 'ADMIN_EMAIL', label: 'Admin login', hint: 'ADMIN_EMAIL + ADMIN_PASSWORD + SESSION_SECRET' },
-].map((e) => ({ ...e, set: Boolean(process.env[e.name]) }));
+].map((e) => ({ ...e, set: Boolean(env(e.name)) }));
 
 const deployHook = await getSetting('deploy_hook_url');
 const ok = Astro.url.searchParams.get('ok');

@@ -1,11 +1,12 @@
 // Neon access for the admin app (HTTP driver — one client per lambda is fine).
 import { neon } from '@neondatabase/serverless';
+import { env } from './env';
 
 let _sql: ReturnType<typeof neon> | null = null;
 
 export function sql() {
   if (!_sql) {
-    const url = process.env.DATABASE_URL;
+    const url = env('DATABASE_URL');
     if (!url) throw new Error('DATABASE_URL is not set');
     _sql = neon(url);
   }

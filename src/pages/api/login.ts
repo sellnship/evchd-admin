@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { COOKIE_NAME, checkCredentials, makeToken } from '../../lib/auth';
 
-export const POST: APIRoute = async ({ request, cookies, redirect }) => {
+export const POST: APIRoute = async ({ request, cookies, redirect, url }) => {
   const form = await request.formData();
   const email = String(form.get('email') ?? '');
   const password = String(form.get('password') ?? '');
@@ -10,7 +10,7 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
 
   cookies.set(COOKIE_NAME, makeToken(), {
     httpOnly: true,
-    secure: true,
+    secure: url.protocol === 'https:', // Secure in prod; plain http on localhost dev
     sameSite: 'lax',
     path: '/',
     maxAge: 7 * 24 * 3600,

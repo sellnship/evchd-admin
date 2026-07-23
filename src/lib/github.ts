@@ -1,16 +1,18 @@
 // GitHub REST helpers — Site Pages editing (contents API) and dispatching the
 // blog draft workflow. Env: GITHUB_TOKEN (fine-grained PAT: this repo only,
 // Contents read/write + Actions read/write), GITHUB_REPO ("owner/name").
+import { env } from './env';
+
 const API = 'https://api.github.com';
 
 function repo(): string {
-  const r = process.env.GITHUB_REPO;
+  const r = env('GITHUB_REPO');
   if (!r) throw new Error('GITHUB_REPO is not set (expected "owner/name")');
   return r;
 }
 
 async function gh(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = process.env.GITHUB_TOKEN;
+  const token = env('GITHUB_TOKEN');
   if (!token) throw new Error('GITHUB_TOKEN is not set');
   return fetch(`${API}${path}`, {
     ...init,

@@ -2,11 +2,12 @@
 //   ADMIN_EMAIL, ADMIN_PASSWORD, SESSION_SECRET
 // Token = "<expiryMs>.<HMAC-SHA256(expiryMs)>" in an HttpOnly cookie.
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { env } from './env';
 
 export const COOKIE_NAME = 'evchd_admin';
 
 function secret(): string {
-  const s = process.env.SESSION_SECRET;
+  const s = env('SESSION_SECRET');
   if (!s) throw new Error('SESSION_SECRET is not set');
   return s;
 }
@@ -29,8 +30,8 @@ export function verifyToken(tok?: string): boolean {
 
 /** Constant-time credential check against env. */
 export function checkCredentials(email: string, password: string): boolean {
-  const wantEmail = process.env.ADMIN_EMAIL ?? '';
-  const wantPass = process.env.ADMIN_PASSWORD ?? '';
+  const wantEmail = env('ADMIN_EMAIL');
+  const wantPass = env('ADMIN_PASSWORD');
   if (!wantEmail || !wantPass) return false;
   const a = Buffer.from(password);
   const b = Buffer.from(wantPass);
