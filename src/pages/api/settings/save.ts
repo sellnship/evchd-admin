@@ -20,9 +20,6 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     if (model) await save(`llm_${p.id}_model`, model);
   }
 
-  const falKey = String(form.get('llm_fal_key') ?? '').trim();
-  if (falKey) await save('llm_fal_key', falKey);
-
   const imageModel = String(form.get('image_model') ?? '').trim();
   if (IMAGE_MODELS.some((m) => m.id === imageModel)) await save('image_model', imageModel);
 

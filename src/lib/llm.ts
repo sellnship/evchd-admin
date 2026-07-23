@@ -58,6 +58,40 @@ export async function getActiveProvider(): Promise<string> {
   return configured[0]?.id ?? stored;
 }
 
+/** Turn a provider HTTP failure into a message a human can act on. */
+function apiError(providerId: string, status: number, body: string): Error {
+  let detail = '';
+  try {
+    const j = JSON.parse(body);
+    detail = j?.error?.message ?? j?.message ?? '';
+  } catch {
+    detail = body;
+  }
+  detail = String(detail).split('\n')[0].slice(0, 180);
+  const label = PROVIDERS.find((p) => p.id === providerId)?.label ?? providerId;
+
+  let msg: string;
+  if (status === 429) {
+    const retry = body.match(/retry in ([\d.]+)s/i)?.[1];
+    msg = /free[_ ]?tier|limit: 0/i.test(body)
+      ? `${label}: your plan has NO quota for this model (free tier). Enable billing on the provider, or pick a different model/provider from the dropdown.`
+      : `${label}: rate limit reached — wait ${retry ? `~${Math.ceil(Number(retry))} seconds` : 'a minute'} and try again.`;
+  } else if (status === 401) {
+    msg = `${label}: the API key was rejected — re-check it in Settings.`;
+  } else if (status === 403) {
+    msg = `${label}: access denied — this key may lack permission for this model, or billing isn't enabled.`;
+  } else if (status === 402 || /insufficient[_ ]quota|billing|credit/i.test(detail)) {
+    msg = `${label}: out of credits — top up your account on the provider's billing page.`;
+  } else if (status === 404) {
+    msg = `${label}: model not found — check the model name in Settings.`;
+  } else if (status >= 500) {
+    msg = `${label}: temporary problem on the provider's side (HTTP ${status}) — try again in a moment.`;
+  } else {
+    msg = `${label}: request failed (HTTP ${status})${detail ? ` — ${detail}` : ''}`;
+  }
+  return new Error(msg);
+}
+
 /** Mask a stored key for display: prefix + last 4, never the middle. */
 export function maskKey(key: string): string {
   if (!key) return '';
@@ -82,14 +116,19 @@ export async function complete(
   if (!key) throw new Error(`No API key configured for ${providerId} — add it in Settings`);
 
   if (providerId === 'anthropic') {
-    const client = new Anthropic({ apiKey: key });
-    const msg = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const text = msg.content.find((b) => b.type === 'text');
-    return text && 'text' in text ? text.text : '';
+    try {
+      const client = new Anthropic({ apiKey: key });
+      const msg = await client.messages.create({
+        model,
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = msg.content.find((b) => b.type === 'text');
+      return text && 'text' in text ? text.text : '';
+    } catch (e: any) {
+      if (typeof e?.status === 'number') throw apiError('anthropic', e.status, e.message ?? '');
+      throw e;
+    }
   }
 
   if (providerId === 'gemini') {
@@ -101,7 +140,7 @@ export async function complete(
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       },
     );
-    if (!res.ok) throw new Error(`Gemini: HTTP ${res.status} ${await res.text()}`);
+    if (!res.ok) throw apiError('gemini', res.status, await res.text());
     const j = await res.json();
     return j.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') ?? '';
   }
@@ -116,7 +155,7 @@ export async function complete(
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens }),
   });
-  if (!res.ok) throw new Error(`${providerId}: HTTP ${res.status} ${await res.text()}`);
+  if (!res.ok) throw apiError(providerId, res.status, await res.text());
   const j = await res.json();
   return j.choices?.[0]?.message?.content ?? '';
 }
@@ -130,50 +169,107 @@ export function extractJSON<T>(text: string): T {
   return JSON.parse(raw.slice(start).replace(/```\s*$/, '').trim()) as T;
 }
 
-// ── Image models (fal.ai) ───────────────────────────────────────────────────
+// ── Image models (OpenAI + Gemini — reuse the same provider keys) ───────────
 
 export interface ImageModel {
-  id: string;      // fal endpoint
+  id: string;
+  provider: 'openai' | 'gemini';
   label: string;
-  best?: boolean;  // default selection
+  best?: boolean; // default selection when its provider is configured
 }
 
-// Best-quality first — the blog editor preselects the `best` entry.
+// Best-quality first — the editor preselects the best AVAILABLE entry.
 export const IMAGE_MODELS: ImageModel[] = [
-  { id: 'fal-ai/imagen4/preview/ultra', label: 'Imagen 4 Ultra — best quality', best: true },
-  { id: 'fal-ai/imagen4', label: 'Imagen 4 — engine default' },
-  { id: 'fal-ai/flux-pro/v1.1', label: 'FLUX 1.1 Pro' },
-  { id: 'fal-ai/flux/dev', label: 'FLUX.1 Dev — fastest/cheapest' },
+  { id: 'gpt-image-1', provider: 'openai', label: 'GPT Image 1 (OpenAI) — best quality', best: true },
+  { id: 'gemini-2.5-flash-image', provider: 'gemini', label: 'Gemini 2.5 Flash Image (Nano Banana)' },
+  { id: 'imagen-4.0-generate-001', provider: 'gemini', label: 'Imagen 4 (Gemini API)' },
+  { id: 'dall-e-3', provider: 'openai', label: 'DALL·E 3 (OpenAI)' },
 ];
 
-export async function getFalKey(): Promise<string> {
-  return (await getSetting('llm_fal_key')) || env('FAL_KEY');
+/** Image models whose provider has a key configured. */
+export async function getAvailableImageModels(): Promise<ImageModel[]> {
+  const out: ImageModel[] = [];
+  for (const m of IMAGE_MODELS) {
+    if (await getProviderKey(m.provider)) out.push(m);
+  }
+  return out;
 }
 
-/**
- * Generate one 16:9 image via fal.ai and return the raw bytes.
- * Imagen models take `aspect_ratio`; FLUX models take `image_size`.
- */
+/** The stored default image model if still available, else the best available. */
+export async function getDefaultImageModel(): Promise<string> {
+  const available = await getAvailableImageModels();
+  const stored = await getSetting('image_model');
+  if (stored && available.some((m) => m.id === stored)) return stored;
+  return available[0]?.id ?? '';
+}
+
+/** Generate one landscape image and return the raw bytes. */
 export async function generateImage(modelId: string, prompt: string): Promise<Buffer> {
-  const key = await getFalKey();
-  if (!key) throw new Error('No fal.ai key configured — add it in Settings');
+  const model = IMAGE_MODELS.find((m) => m.id === modelId);
+  if (!model) throw new Error(`unknown image model "${modelId}"`);
+  const key = await getProviderKey(model.provider);
+  if (!key) throw new Error(`No ${model.provider} key configured — add it in Settings`);
 
-  const isFlux = modelId.includes('flux');
-  const input = isFlux
-    ? { prompt, image_size: 'landscape_16_9', num_images: 1 }
-    : { prompt, aspect_ratio: '16:9', num_images: 1 };
+  if (model.provider === 'openai') {
+    // Images API. gpt-image-1 always returns b64_json; dall-e-3 needs asking.
+    const body: Record<string, unknown> = {
+      model: model.id,
+      prompt,
+      n: 1,
+      size: model.id === 'dall-e-3' ? '1792x1024' : '1536x1024', // landscape
+    };
+    if (model.id === 'dall-e-3') body.response_format = 'b64_json';
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw apiError('openai', res.status, await res.text());
+    const j = await res.json();
+    const d = j.data?.[0];
+    if (d?.b64_json) return Buffer.from(d.b64_json, 'base64');
+    if (d?.url) {
+      const img = await fetch(d.url);
+      if (!img.ok) throw new Error(`image download failed: HTTP ${img.status}`);
+      return Buffer.from(await img.arrayBuffer());
+    }
+    throw new Error('OpenAI images: unexpected response shape');
+  }
 
-  // fal's queue-run endpoint (synchronous mode) — no SDK needed server-side.
-  const res = await fetch(`https://fal.run/${modelId}`, {
-    method: 'POST',
-    headers: { authorization: `Key ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`fal.ai ${modelId}: HTTP ${res.status} ${await res.text()}`);
+  // Gemini API — two shapes: Imagen via :predict, Flash Image via generateContent.
+  if (model.id.startsWith('imagen')) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:predict?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instances: [{ prompt }],
+          parameters: { sampleCount: 1, aspectRatio: '16:9' },
+        }),
+      },
+    );
+    if (!res.ok) throw apiError('gemini', res.status, await res.text());
+    const j = await res.json();
+    const b64 = j.predictions?.[0]?.bytesBase64Encoded;
+    if (!b64) throw new Error('Gemini Imagen: unexpected response shape');
+    return Buffer.from(b64, 'base64');
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      }),
+    },
+  );
+  if (!res.ok) throw apiError('gemini', res.status, await res.text());
   const j = await res.json();
-  const url = j?.images?.[0]?.url;
-  if (!url) throw new Error(`fal.ai ${modelId}: unexpected response shape`);
-  const img = await fetch(url);
-  if (!img.ok) throw new Error(`image download failed: HTTP ${img.status}`);
-  return Buffer.from(await img.arrayBuffer());
+  const part = j.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData?.data);
+  if (!part) throw new Error('Gemini image: no image in response');
+  return Buffer.from(part.inlineData.data, 'base64');
 }

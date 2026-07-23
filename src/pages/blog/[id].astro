@@ -1,8 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { sql, type Article } from '../../lib/db';
-import { getSetting } from '../../lib/settings';
-import { IMAGE_MODELS, getFalKey } from '../../lib/llm';
+import { getAvailableImageModels, getDefaultImageModel } from '../../lib/llm';
 import { getCategories } from '../../lib/categories';
 
 const { id } = Astro.params;
@@ -38,10 +37,26 @@ if (!isNew && article.slug) {
 const saved = Astro.url.searchParams.get('saved');
 const err = Astro.url.searchParams.get('err');
 
-// AI hero generation: model list + default (Settings → "Default image model",
-// falling back to the best-quality model).
-const falReady = Boolean(await getFalKey());
-const defaultImageModel = (await getSetting('image_model')) || IMAGE_MODELS.find((m) => m.best)!.id;
+// AI image generation rides on the OpenAI / Gemini keys. Model list = only
+// models whose provider is configured; default = Settings choice or best.
+const imageModels = await getAvailableImageModels();
+const imagesReady = imageModels.length > 0;
+const defaultImageModel = await getDefaultImageModel();
+
+// Default image prompt "according to the article", editable before generating:
+// prefer the queued topic's image scene, else derive one from title/category.
+let defaultScene = '';
+if (!isNew && article.slug) {
+  const t = (await sql()`
+    SELECT image_prompt FROM topics
+    WHERE slug = ${article.slug} AND lang = ${article.lang}`) as { image_prompt: string }[];
+  defaultScene = t[0]?.image_prompt?.trim() || '';
+  if (!defaultScene) {
+    defaultScene =
+      `An everyday ${article.category || 'EV'} scene in Chandigarh/Mohali that illustrates ` +
+      `"${article.title}" — real people, residential sectors, natural light.`;
+  }
+}
 
 // Category dropdown from the DB; keep a legacy value selectable if the article
 // has one that's no longer in the categories table.
@@ -95,14 +110,14 @@ if (article.category && !categories.includes(article.category)) categories.unshi
         <div class="card p-3">
           <label class="form-label small fw-bold">Body (Markdown)</label>
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
-          {!isNew && falReady && (
+          {!isNew && imagesReady && (
             <div class="border-top border-secondary-subtle pt-2 mt-2">
               <label class="form-label small fw-bold mb-1">🖼 Insert AI image at cursor</label>
               <div class="d-flex gap-2">
                 <input class="form-control form-control-sm" id="bodyImgPrompt"
                        placeholder="Describe the scene for this in-article image" />
                 <select class="form-select form-select-sm w-auto" id="bodyImgModel">
-                  {IMAGE_MODELS.map((m) => (
+                  {imageModels.map((m) => (
                     <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
                   ))}
                 </select>
@@ -148,18 +163,18 @@ if (article.category && !categories.includes(article.category)) categories.unshi
             <label class="form-label small fw-bold mb-1">🎨 Generate with AI</label>
             {isNew ? (
               <div class="small text-secondary">💾 Save the article once, then generate a hero here.</div>
-            ) : !falReady ? (
+            ) : !imagesReady ? (
               <div class="alert alert-warning py-2 small mb-0">
-                Image generation needs a fal.ai key — <a href="/settings">add it in Settings</a>
-                (the "fal.ai (Images)" card).
+                Image generation needs an <b>OpenAI</b> or <b>Gemini</b> key —
+                <a href="/settings">add one in Settings</a>.
               </div>
             ) : (
               <>
-                <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="2" required
-                  placeholder="Describe the SCENE (vehicle & style rules are added automatically)"></textarea>
+                <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="3" required
+                  placeholder="Describe the SCENE (vehicle & style rules are added automatically)">{defaultScene}</textarea>
                 <label class="form-label small mb-1">Image model</label>
                 <select class="form-select form-select-sm mb-2" name="image_model" form="genheroForm">
-                  {IMAGE_MODELS.map((m) => (
+                  {imageModels.map((m) => (
                     <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
                   ))}
                 </select>
@@ -199,7 +214,7 @@ if (article.category && !categories.includes(article.category)) categories.unshi
     </form>
   )}
 
-  {!isNew && falReady && (
+  {!isNew && imagesReady && (
     <script define:vars={{ articleId: article.id }}>
       const btn = document.getElementById('bodyImgBtn');
       const statusEl = document.getElementById('bodyImgStatus');

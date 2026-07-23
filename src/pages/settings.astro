@@ -2,7 +2,7 @@
 import AdminLayout from '../layouts/AdminLayout.astro';
 import { getSetting } from '../lib/settings';
 import { env } from '../lib/env';
-import { PROVIDERS, IMAGE_MODELS, getProviderKey, getProviderModel, getActiveProvider, getFalKey, maskKey } from '../lib/llm';
+import { PROVIDERS, IMAGE_MODELS, getProviderKey, getProviderModel, getActiveProvider, getDefaultImageModel, maskKey } from '../lib/llm';
 
 // Provider cards: key status (masked, never full value) + current model.
 const providers = await Promise.all(
@@ -14,9 +14,11 @@ const providers = await Promise.all(
   })),
 );
 const activeProvider = await getActiveProvider();
-const falConnected = Boolean(await getFalKey());
-const falMasked = maskKey(await getFalKey());
-const defaultImageModel = (await getSetting('image_model')) || IMAGE_MODELS.find((m) => m.best)!.id;
+// Image models ride on the OpenAI / Gemini keys above — no separate service.
+const imageModels = await Promise.all(
+  IMAGE_MODELS.map(async (m) => ({ ...m, available: Boolean(await getProviderKey(m.provider)) })),
+);
+const defaultImageModel = await getDefaultImageModel();
 
 const infra = [
   { name: 'DATABASE_URL', label: 'Neon Postgres', hint: 'articles + topics database' },
@@ -73,24 +75,24 @@ const ok = Astro.url.searchParams.get('ok');
         <div class="card p-3 h-100">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <div class="fw-bold">fal.ai (Images)</div>
-              <div class="small text-secondary">fal.ai/dashboard → API Keys — powers hero generation</div>
+              <div class="fw-bold">🖼 Image Generation</div>
+              <div class="small text-secondary">Uses your OpenAI / Gemini keys above — no separate service</div>
             </div>
-            {falConnected
-              ? <span class="badge status-published">✓ Connected</span>
-              : <span class="badge status-pending">Not set</span>}
+            {imageModels.some((m) => m.available)
+              ? <span class="badge status-published">✓ Ready</span>
+              : <span class="badge status-pending">Add an OpenAI or Gemini key</span>}
           </div>
-          <label class="form-label small mb-1">API Key</label>
-          <input class="form-control form-control-sm mono" type="password" name="llm_fal_key"
-                 placeholder={falConnected ? 'Leave blank to keep existing key' : 'Paste fal.ai key'}
-                 autocomplete="off" />
-          {falConnected && <div class="small text-secondary mono mt-1">{falMasked}</div>}
-          <label class="form-label small mb-1 mt-2">Default image model</label>
+          <label class="form-label small mb-1">Default image model</label>
           <select class="form-select form-select-sm" name="image_model">
-            {IMAGE_MODELS.map((m) => (
-              <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+            {imageModels.map((m) => (
+              <option value={m.id} selected={m.id === defaultImageModel} disabled={!m.available}>
+                {m.label}{m.available ? '' : ` — needs ${m.provider} key`}
+              </option>
             ))}
           </select>
+          <div class="small text-secondary mt-2">
+            Heroes are branded 1200×675 WebP with the logo watermark; body images are clean 16:9.
+          </div>
         </div>
       </div>
     </div>
