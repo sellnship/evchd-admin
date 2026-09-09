@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { setSetting } from '../../../../lib/settings';
 import { logActivity } from '../../../../lib/db';
 import { PROVIDERS, IMAGE_MODELS } from '../../../../lib/llm';

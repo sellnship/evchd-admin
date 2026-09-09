@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { sql } from '../../../../lib/db';
 import { complete, extractJSON, getActiveProvider } from '../../../../lib/llm';
 import { getCategories } from '../../../../lib/categories';

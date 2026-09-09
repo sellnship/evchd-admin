@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { sql, logActivity } from '../../../../lib/db';
 
 export const POST: APIRoute = async ({ request, redirect }) => {

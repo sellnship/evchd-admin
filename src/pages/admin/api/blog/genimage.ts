@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { put } from '@vercel/blob';
 import sharp from 'sharp';
 import { sql, logActivity } from '../../../../lib/db';

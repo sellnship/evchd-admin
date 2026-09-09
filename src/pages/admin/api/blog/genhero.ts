@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { put } from '@vercel/blob';
 import { sql, logActivity } from '../../../../lib/db';
 import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';

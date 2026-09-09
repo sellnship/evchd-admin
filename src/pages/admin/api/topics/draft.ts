@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { sql, logActivity } from '../../../../lib/db';
 import { complete } from '../../../../lib/llm';
 

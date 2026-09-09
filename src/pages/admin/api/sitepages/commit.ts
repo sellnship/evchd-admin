@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+export const prerender = false;
 import { putFile } from '../../../../lib/github';
 import { logActivity } from '../../../../lib/db';
 

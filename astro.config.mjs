@@ -1,19 +1,30 @@
-// Admin panel — server-rendered on Vercel (its own Vercel project with
-// Root Directory = admin). All pages are dynamic: they read/write Neon and
-// call the GitHub API, so nothing is prerendered.
+// Admin panel — its own Vercel project (Root Directory = admin). Every page
+// and API route is dynamic (Neon reads/writes, GitHub API calls), gated via
+// explicit `export const prerender = false` rather than `output: 'server'`.
+//
+// `output: 'server'` produced a 508 INFINITE_LOOP_DETECTED from Vercel's
+// edge on every dynamic route — reproduced across two separate Vercel
+// projects/accounts and two major astro/@astrojs/vercel version combos,
+// while the deployed function behaved correctly when invoked directly
+// (bypassing Vercel's routing), meaning the loop was in how Vercel's edge
+// routes `server`-output builds, not in this app's own code. Confirmed
+// against a working sibling project (gmadanew-inspect / gmada.in) running
+// the identical astro@^7 + @astrojs/vercel@^11 combo with `output: 'static'`
+// + per-route `prerender = false` in production with no issue — matching
+// that proven pattern here instead of chasing the `server`-output bug.
+//
+// Pages live under src/pages/admin/ (plain file-based routing) rather than
+// using Astro's `base` option — the adapter doesn't carry `base` into its
+// generated Vercel routing config, which separately produced its own
+// edge<->function redirect loop (see withastro/astro#9942,
+// withastro/adapters#418). Every internal link/redirect already hardcodes
+// the /admin/ prefix, so nesting the pages achieves the same URLs without
+// depending on adapter base-path support.
 import { defineConfig } from 'astro/config';
 import vercel from '@astrojs/vercel';
 
 export default defineConfig({
-  output: 'server',
-  // Served at www.evchandigarh.in/admin via a rewrite in the main site's
-  // vercel.json. Pages live under src/pages/admin/ (plain file-based
-  // routing) rather than using Astro's `base` option — the @astrojs/vercel
-  // adapter doesn't carry `base` into its generated Vercel routing config,
-  // which produced an edge<->function redirect loop (see withastro/astro#9942,
-  // withastro/adapters#418). Every internal link/redirect already hardcodes
-  // the /admin/ prefix, so nesting the pages achieves the same URLs without
-  // depending on adapter base-path support.
+  output: 'static',
   // maxDuration: AI routes (image generation, topic suggestions via LLM) can
   // take 20-60s — well past the default function timeout.
   adapter: vercel({ maxDuration: 60 }),
