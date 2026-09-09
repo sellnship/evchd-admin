@@ -25,6 +25,12 @@ import vercel from '@astrojs/vercel';
 
 export default defineConfig({
   output: 'static',
+  // Renamed from the default `_astro` so this app's built CSS/JS never
+  // collides with the main site's own `_astro/*` bundle — both are Astro
+  // projects, and the main site's vercel.json needs to proxy this app's
+  // assets through a path that's unambiguously *not* also the main site's
+  // own asset folder.
+  build: { assets: '_admin-astro' },
   // maxDuration: AI routes (image generation, topic suggestions via LLM) can
   // take 20-60s — well past the default function timeout.
   adapter: vercel({ maxDuration: 60 }),
