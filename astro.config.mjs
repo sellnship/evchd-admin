@@ -31,6 +31,13 @@ export default defineConfig({
   // assets through a path that's unambiguously *not* also the main site's
   // own asset folder.
   build: { assets: '_admin-astro' },
+  // Astro's default CSRF guard rejects POSTs whose Origin header doesn't
+  // match the request's own host. This app is only ever reached through the
+  // main site's rewrite proxy (www.evchandigarh.in/admin -> this backend),
+  // so the browser's Origin is always the main site's, not this backend's
+  // real host -- a false positive here, not an actual cross-site request.
+  // Session-cookie auth (src/middleware.ts) is the real access control.
+  security: { checkOrigin: false },
   // maxDuration: AI routes (image generation, topic suggestions via LLM) can
   // take 20-60s — well past the default function timeout.
   adapter: vercel({ maxDuration: 60 }),
