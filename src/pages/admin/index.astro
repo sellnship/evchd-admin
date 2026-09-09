@@ -1,6 +1,6 @@
 ---
-import AdminLayout from '../layouts/AdminLayout.astro';
-import { sql } from '../lib/db';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { sql } from '../../lib/db';
 
 const q = sql();
 const [counts] = (await q`

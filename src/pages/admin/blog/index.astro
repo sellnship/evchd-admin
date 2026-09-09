@@ -1,6 +1,6 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
-import { sql, type Article } from '../../lib/db';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { sql, type Article } from '../../../lib/db';
 
 const flt = Astro.url.searchParams.get('status') ?? '';
 const rows = (flt

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { setSetting } from '../../../lib/settings';
-import { logActivity } from '../../../lib/db';
-import { PROVIDERS, IMAGE_MODELS } from '../../../lib/llm';
+import { setSetting } from '../../../../lib/settings';
+import { logActivity } from '../../../../lib/db';
+import { PROVIDERS, IMAGE_MODELS } from '../../../../lib/llm';
 
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();

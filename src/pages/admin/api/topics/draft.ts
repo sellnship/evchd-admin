@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { sql, logActivity } from '../../../lib/db';
-import { complete } from '../../../lib/llm';
+import { sql, logActivity } from '../../../../lib/db';
+import { complete } from '../../../../lib/llm';
 
 // "⚡ Draft with AI" — generate the article for ONE topic row (slug+lang)
 // directly in the admin with the active LLM, and save it as a status='draft'

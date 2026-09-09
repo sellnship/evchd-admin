@@ -1,8 +1,8 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
-import { sql, type Article } from '../../lib/db';
-import { getAvailableImageModels, getDefaultImageModel } from '../../lib/llm';
-import { getCategories } from '../../lib/categories';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { sql, type Article } from '../../../lib/db';
+import { getAvailableImageModels, getDefaultImageModel } from '../../../lib/llm';
+import { getCategories } from '../../../lib/categories';
 
 const { id } = Astro.params;
 const isNew = id === 'new';

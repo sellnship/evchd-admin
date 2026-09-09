@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { putFile } from '../../../lib/github';
-import { logActivity } from '../../../lib/db';
+import { putFile } from '../../../../lib/github';
+import { logActivity } from '../../../../lib/db';
 
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();

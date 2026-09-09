@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { sql } from '../../../lib/db';
-import { complete, extractJSON, getActiveProvider } from '../../../lib/llm';
-import { getCategories } from '../../../lib/categories';
+import { sql } from '../../../../lib/db';
+import { complete, extractJSON, getActiveProvider } from '../../../../lib/llm';
+import { getCategories } from '../../../../lib/categories';
 
 // Suggest blog topics with the active LLM, seeded with (a) what's already
 // published/queued — so suggestions don't duplicate — and (b) today's Google

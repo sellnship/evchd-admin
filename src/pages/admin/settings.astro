@@ -1,8 +1,8 @@
 ---
-import AdminLayout from '../layouts/AdminLayout.astro';
-import { getSetting } from '../lib/settings';
-import { env } from '../lib/env';
-import { PROVIDERS, IMAGE_MODELS, getProviderKey, getProviderModel, getActiveProvider, getDefaultImageModel, maskKey } from '../lib/llm';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getSetting } from '../../lib/settings';
+import { env } from '../../lib/env';
+import { PROVIDERS, IMAGE_MODELS, getProviderKey, getProviderModel, getActiveProvider, getDefaultImageModel, maskKey } from '../../lib/llm';
 
 // Provider cards: key status (masked, never full value) + current model.
 const providers = await Promise.all(

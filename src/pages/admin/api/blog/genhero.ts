@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { put } from '@vercel/blob';
-import { sql, logActivity } from '../../../lib/db';
-import { generateImage, IMAGE_MODELS } from '../../../lib/llm';
-import { composeHero } from '../../../lib/hero';
+import { sql, logActivity } from '../../../../lib/db';
+import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
+import { composeHero } from '../../../../lib/hero';
 
 // Generate a hero image with the selected fal.ai model, brand it (1200×675
 // WebP + logo), upload to Vercel Blob, and save it on the article.

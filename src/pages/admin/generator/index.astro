@@ -1,10 +1,10 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
-import { sql, type Topic } from '../../lib/db';
-import { actionsUrl } from '../../lib/github';
-import { getActiveProvider, getConfiguredProviders } from '../../lib/llm';
-import { getCategories } from '../../lib/categories';
-import { env } from '../../lib/env';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { sql, type Topic } from '../../../lib/db';
+import { actionsUrl } from '../../../lib/github';
+import { getActiveProvider, getConfiguredProviders } from '../../../lib/llm';
+import { getCategories } from '../../../lib/categories';
+import { env } from '../../../lib/env';
 
 const topics = (await sql()`
   SELECT t.*, a.id AS article_id

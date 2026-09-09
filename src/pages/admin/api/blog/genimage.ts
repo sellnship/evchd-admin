@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { put } from '@vercel/blob';
 import sharp from 'sharp';
-import { sql, logActivity } from '../../../lib/db';
-import { generateImage, IMAGE_MODELS } from '../../../lib/llm';
+import { sql, logActivity } from '../../../../lib/db';
+import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
 
 // Generate a BODY image (inside the article markdown): 16:9 WebP on Blob, no
 // logo watermark (that's hero-only). Returns JSON { url } — the editor inserts

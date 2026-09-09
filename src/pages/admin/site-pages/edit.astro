@@ -1,6 +1,6 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
-import { getFile } from '../../lib/github';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getFile } from '../../../lib/github';
 
 const path = Astro.url.searchParams.get('path') ?? '';
 // Only markdown under src/content is editable — never workflows, scripts, config.

@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import sharp from 'sharp';
 import { put } from '@vercel/blob';
-import { sql, logActivity } from '../../../lib/db';
-import { getSetting } from '../../../lib/settings';
+import { sql, logActivity } from '../../../../lib/db';
+import { getSetting } from '../../../../lib/settings';
 
 const HERO_W = 1200, HERO_H = 675, WEBP_QUALITY = 82;
 
