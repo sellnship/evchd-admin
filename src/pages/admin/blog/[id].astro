@@ -2,7 +2,7 @@
 export const prerender = false;
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { sql, type Article } from '../../../lib/db';
-import { getAvailableImageModels, getDefaultImageModel } from '../../../lib/llm';
+import { getAvailableImageModels, getDefaultImageModel, getConfiguredProviders } from '../../../lib/llm';
 import { getCategories } from '../../../lib/categories';
 import { estimateImageCostUsd, estimateImageTimeSec, formatUsd, GPT_IMAGE_QUALITIES } from '../../../lib/apiCost';
 import { getAuthors } from '../../../lib/authors';
@@ -82,6 +82,7 @@ const categories = await getCategories();
 if (article.category && !categories.includes(article.category)) categories.unshift(article.category);
 
 const authors = await getAuthors();
+const llmReady = (await getConfiguredProviders()).length > 0;
 
 // Pipeline audit trail (populated only by the AI pipeline, admin/blog/ai.astro -- a manually
 // created/edited article simply has these null). Advisory only: matches the same "flag, don't
@@ -101,6 +102,8 @@ const hasPipelineReport = Boolean(
 
   <form method="post" action="/admin/api/blog/save" enctype="multipart/form-data">
     <input type="hidden" name="id" value={isNew ? '' : String(article.id)} />
+    <input type="hidden" name="fact_check_json" id="factCheckJsonInput" />
+    <input type="hidden" name="seo_report_json" id="seoReportJsonInput" />
     <div class="row g-3">
       <div class="col-lg-8">
         <div class="card p-3 mb-3">
@@ -152,8 +155,35 @@ const hasPipelineReport = Boolean(
         </div>
 
         <div class="card p-3">
-          <label class="form-label small fw-bold">Body (Markdown) <span id="bodyWordCount" class="text-secondary fw-normal"></span></label>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+            <label class="form-label small fw-bold mb-0">Body (Markdown) <span id="bodyWordCount" class="text-secondary fw-normal"></span></label>
+            <div class="d-flex align-items-center gap-1">
+              <label class="small text-secondary mb-0">Target length</label>
+              <select class="form-select form-select-sm w-auto" id="targetLength">
+                <option value="700">Short (~700-900w)</option>
+                <option value="900" selected>Medium (~900-1300w)</option>
+                <option value="1600">Long (~1600-2200w)</option>
+              </select>
+              <span id="lengthStatus" class="small"></span>
+            </div>
+          </div>
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
+
+          <div class="border-top border-secondary-subtle pt-2 mt-2">
+            <div class="d-flex gap-2 flex-wrap">
+              <button type="button" class="btn btn-outline-light-subtle btn-sm" id="previewBtn">👁 Preview</button>
+              {llmReady ? (
+                <>
+                  <button type="button" class="btn btn-outline-light-subtle btn-sm" id="factCheckBtn">✓ Fact Check</button>
+                  <button type="button" class="btn btn-outline-light-subtle btn-sm" id="seoCheckBtn">🔎 SEO Check</button>
+                </>
+              ) : (
+                <span class="small text-secondary align-self-center">Fact-check &amp; SEO check need an LLM key — <a href="/admin/settings">add one in Settings</a>.</span>
+              )}
+            </div>
+            <div class="small mt-1" id="contentToolsStatus"></div>
+          </div>
+
           {!isNew && imagesReady && (
             <div class="border-top border-secondary-subtle pt-2 mt-2">
               <label class="form-label small fw-bold mb-1">🖼 Insert AI image at cursor</label>
@@ -314,19 +344,159 @@ const hasPipelineReport = Boolean(
     </div>
   </form>
 
+  <div id="previewOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1050; align-items:center; justify-content:center;">
+    <div style="background:var(--bs-body-bg); max-width:800px; width:92%; max-height:85vh; overflow:auto; border-radius:8px; padding:1.5rem;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <p class="fw-bold mb-0">Article Preview</p>
+        <button type="button" class="btn-close" id="previewCloseBtn"></button>
+      </div>
+      <div id="previewContent"></div>
+    </div>
+  </div>
+
   <script>
-    // Live word count on the Body textarea — matches the AI Generator page's
-    // counter, but this page didn't have one at all (manual edits and
-    // continuing an AI draft here both need to see it against the 700-word
-    // minimum, not just during the initial AI Generator run).
+    // Live word count + target-length guidance on the Body textarea — matches
+    // the AI Generator page's counter, but this page never had one (manual
+    // edits and continuing an AI draft here both need to see it against the
+    // 700-word minimum, not just during the initial AI Generator run).
     const bodyEditorEl = document.getElementById('bodyEditor');
     const bodyWordCountEl = document.getElementById('bodyWordCount');
+    const targetLengthEl = document.getElementById('targetLength');
+    const lengthStatusEl = document.getElementById('lengthStatus');
+    const LENGTH_RANGES = { '700': [700, 900], '900': [900, 1300], '1600': [1600, 2200] };
+
+    function wordCount(text) {
+      return text.trim() ? text.trim().split(/\s+/).length : 0;
+    }
     function updateBodyWordCount() {
-      const words = bodyEditorEl.value.trim() ? bodyEditorEl.value.trim().split(/\s+/).length : 0;
+      const words = wordCount(bodyEditorEl.value);
       bodyWordCountEl.textContent = `(${words} word${words === 1 ? '' : 's'})`;
+      const [min, max] = LENGTH_RANGES[targetLengthEl.value];
+      if (words < 700) {
+        lengthStatusEl.textContent = 'below the 700-word minimum';
+        lengthStatusEl.style.color = '#F87171';
+      } else if (words < min) {
+        lengthStatusEl.textContent = `below target (${min}-${max}w)`;
+        lengthStatusEl.style.color = '#F5A94E';
+      } else if (words <= max) {
+        lengthStatusEl.textContent = 'within target ✓';
+        lengthStatusEl.style.color = '#4ADE80';
+      } else {
+        lengthStatusEl.textContent = 'above target (fine, just longer)';
+        lengthStatusEl.style.color = '';
+      }
     }
     bodyEditorEl.addEventListener('input', updateBodyWordCount);
+    targetLengthEl.addEventListener('change', updateBodyWordCount);
     updateBodyWordCount();
+
+    async function safeJson(res) {
+      const text = await res.text();
+      try { return JSON.parse(text); } catch { throw new Error(`Server error (status ${res.status}): ${(text || 'empty response').slice(0, 200)}`); }
+    }
+    const toolsStatusEl = document.getElementById('contentToolsStatus');
+    function setToolsStatus(message, isError) {
+      toolsStatusEl.textContent = message;
+      toolsStatusEl.style.color = isError ? '#F87171' : '';
+    }
+
+    // Preview — same render endpoint as the AI Generator page, just fed from
+    // this page's plain form fields instead of its own result pane.
+    const previewOverlay = document.getElementById('previewOverlay');
+    document.getElementById('previewBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('previewBtn');
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Loading…';
+      try {
+        const res = await fetch('/admin/api/blog/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: document.querySelector('input[name="title"]').value,
+            category: document.querySelector('select[name="category"]').value,
+            tags: document.querySelector('input[name="tags"]').value.split(',').map((t) => t.trim()).filter(Boolean),
+            contentMarkdown: bodyEditorEl.value,
+          }),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(data.error || 'Could not render a preview.');
+        document.getElementById('previewContent').innerHTML = data.html;
+        previewOverlay.style.display = 'flex';
+      } catch (err) {
+        setToolsStatus(err.message, true);
+      } finally { btn.disabled = false; btn.textContent = original; }
+    });
+    document.getElementById('previewCloseBtn').addEventListener('click', () => { previewOverlay.style.display = 'none'; });
+    previewOverlay.addEventListener('click', (e) => { if (e.target === previewOverlay) previewOverlay.style.display = 'none'; });
+
+    // Fact Check / SEO Check — reuse the AI pipeline's single-stage endpoints
+    // against whatever's currently in the editor, so a manually-written
+    // article gets the same checks an AI-generated one does. Results are
+    // stashed into hidden fields and only actually persisted on the next
+    // 💾 Save (so a check-then-abandon never writes anything).
+    const factCheckBtn = document.getElementById('factCheckBtn');
+    if (factCheckBtn) {
+      factCheckBtn.addEventListener('click', async () => {
+        const original = factCheckBtn.textContent;
+        factCheckBtn.disabled = true; factCheckBtn.textContent = 'Checking…';
+        setToolsStatus('', false);
+        try {
+          const res = await fetch('/admin/api/blog/factcheck-only', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contentMarkdown: bodyEditorEl.value }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(data.error || 'Fact check failed.');
+          bodyEditorEl.value = data.contentMarkdown;
+          updateBodyWordCount();
+          document.getElementById('factCheckJsonInput').value = JSON.stringify(data.factCheck);
+          setToolsStatus(
+            `Fact check: ${data.factCheck.issues.length} issue(s), ${data.factCheck.blockers.length} critical blocker(s) — 💾 Save to keep this in the Pipeline Report.`,
+            data.factCheck.blockers.length > 0,
+          );
+        } catch (err) {
+          setToolsStatus(err.message, true);
+        } finally {
+          factCheckBtn.disabled = false; factCheckBtn.textContent = original;
+        }
+      });
+    }
+    const seoCheckBtn = document.getElementById('seoCheckBtn');
+    if (seoCheckBtn) {
+      seoCheckBtn.addEventListener('click', async () => {
+        const original = seoCheckBtn.textContent;
+        seoCheckBtn.disabled = true; seoCheckBtn.textContent = 'Checking…';
+        setToolsStatus('', false);
+        try {
+          const res = await fetch('/admin/api/blog/seo-optimize-only', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: document.querySelector('input[name="title"]').value.trim(),
+              contentMarkdown: bodyEditorEl.value,
+              category: document.querySelector('select[name="category"]').value,
+            }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(data.error || 'SEO check failed.');
+          bodyEditorEl.value = data.contentMarkdown;
+          updateBodyWordCount();
+          const descEl = document.querySelector('textarea[name="description"]');
+          if (data.seoDescription) descEl.value = data.seoDescription;
+          document.getElementById('seoReportJsonInput').value =
+            JSON.stringify({ ...data.seoReport, score: data.seoScore?.score, flags: data.seoScore?.flags });
+          const linksNote = data.internalLinksInserted?.length
+            ? ` — ${data.internalLinksInserted.length} internal link(s) inserted`
+            : '';
+          setToolsStatus(
+            `SEO score: ${data.seoScore?.score ?? '—'}/100${linksNote} — 💾 Save to keep this in the Pipeline Report.`,
+            (data.seoScore?.score ?? 100) < 70,
+          );
+        } catch (err) {
+          setToolsStatus(err.message, true);
+        } finally {
+          seoCheckBtn.disabled = false; seoCheckBtn.textContent = original;
+        }
+      });
+    }
   </script>
 
   {!isNew && imagesReady && (
