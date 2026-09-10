@@ -176,6 +176,7 @@ const hasPipelineReport = Boolean(
                 <>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="factCheckBtn">✓ Fact Check</button>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="seoCheckBtn">🔎 SEO Check</button>
+                  <button type="button" class="btn btn-warning btn-sm d-none" id="expandBtn">📏 Expand Article</button>
                 </>
               ) : (
                 <span class="small text-secondary align-self-center">Fact-check &amp; SEO check need an LLM key — <a href="/admin/settings">add one in Settings</a>.</span>
@@ -390,6 +391,8 @@ const hasPipelineReport = Boolean(
         lengthStatusEl.textContent = 'above target (fine, just longer)';
         lengthStatusEl.style.color = '';
       }
+      const expandBtnEl = document.getElementById('expandBtn');
+      if (expandBtnEl) expandBtnEl.classList.toggle('d-none', words >= min);
     }
     bodyEditorEl.addEventListener('input', updateBodyWordCount);
     targetLengthEl.addEventListener('change', updateBodyWordCount);
@@ -513,6 +516,7 @@ const hasPipelineReport = Boolean(
             category: document.querySelector('select[name="category"]').value,
             tags: document.querySelector('input[name="tags"]').value.split(',').map((t) => t.trim()).filter(Boolean),
             contentMarkdown: bodyEditorEl.value,
+            coverImageUrl: document.querySelector('#heroImageBox img')?.src || '',
           }),
         });
         const data = await safeJson(res);
@@ -600,6 +604,53 @@ const hasPipelineReport = Boolean(
         } finally {
           finishProgress();
           seoCheckBtn.disabled = false; seoCheckBtn.textContent = original;
+        }
+      });
+    }
+
+    // Expand Article -- shown (see updateBodyWordCount above) only while the
+    // body is under the selected target's minimum. Reuses the same
+    // apply-instruction endpoint the AI Generator's free-form "Custom
+    // instruction" box uses, rather than the AI pipeline's own expandArticle()
+    // (which needs a research packet a manually-written article doesn't have)
+    // -- a plain, explicit rewrite instruction works fine here.
+    const expandBtn = document.getElementById('expandBtn');
+    if (expandBtn) {
+      expandBtn.addEventListener('click', async () => {
+        const original = expandBtn.textContent;
+        const words = wordCount(bodyEditorEl.value);
+        const [min] = LENGTH_RANGES[targetLengthEl.value];
+        expandBtn.disabled = true; expandBtn.textContent = 'Expanding…';
+        setToolsStatus(`Expanding from ${words} toward ${min}+ words… (~20-25s)`, false);
+        const finishProgress = startToolsProgress(22);
+        try {
+          const instruction =
+            `Expand this article to at least ${min} words (currently about ${words}). Add more specific, ` +
+            'sourced detail relevant to Chandigarh/Mohali/Panchkula low-speed EV scooters -- do not pad with ' +
+            'filler, repetition, or speculation. Keep every existing fact/figure and the overall structure ' +
+            'exactly as given; add real substance, not length for its own sake.';
+          const res = await fetch('/admin/api/blog/apply-instruction', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: document.querySelector('input[name="title"]').value.trim(),
+              contentMarkdown: bodyEditorEl.value,
+              instruction,
+            }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(data.error || 'Expand failed.');
+          bodyEditorEl.value = data.contentMarkdown;
+          updateBodyWordCount();
+          const newWords = wordCount(bodyEditorEl.value);
+          setToolsStatus(
+            `Expanded ${words} → ${newWords} words. Re-run Fact Check/SEO Check on the new material, then 💾 Save.`,
+            newWords < min,
+          );
+        } catch (err) {
+          setToolsStatus(`Expand failed: ${err.message} — try again, or check your LLM key in Settings.`, true);
+        } finally {
+          finishProgress();
+          expandBtn.disabled = false; expandBtn.textContent = original;
         }
       });
     }
