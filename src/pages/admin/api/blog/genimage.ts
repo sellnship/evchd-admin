@@ -10,7 +10,7 @@ import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
 // the markdown at the cursor.
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const { id, prompt, image_model } = await request.json();
+    const { id, prompt, image_model, image_quality } = await request.json();
     if (!id) throw new Error('save the article first');
     if (!IMAGE_MODELS.some((m) => m.id === image_model)) throw new Error('unknown image model');
     if (!prompt?.trim()) throw new Error('describe the image first');
@@ -26,7 +26,7 @@ export const POST: APIRoute = async ({ request }) => {
       `Chandigarh/Mohali context, warm natural light, realistic editorial photograph. ` +
       `No text, no logos, no watermark.`;
 
-    const base = await generateImage(image_model, fullPrompt);
+    const base = await generateImage(image_model, fullPrompt, image_quality);
     const webp = await sharp(base)
       .resize(1200, 675, { fit: 'cover', position: 'centre' })
       .webp({ quality: 82 })

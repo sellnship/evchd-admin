@@ -356,8 +356,28 @@ export async function getDefaultImageModel(): Promise<string> {
   return available[0]?.id ?? '';
 }
 
-/** Generate one landscape image and return the raw bytes. */
-export async function generateImage(modelId: string, prompt: string): Promise<Buffer> {
+/** fetch() with a hard timeout, so a hung provider fails with a clean message
+ *  instead of running out the clock on Vercel's own function timeout (which
+ *  surfaces as a raw, unhelpful 504 with no error the UI can show). */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s — try a faster image model.`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Generate one landscape image and return the raw bytes. `quality` only applies
+ *  to gpt-image-1 (low/medium/high) — "high" can take 45-60s+ and risks Vercel's
+ *  Hobby-plan 60s hard function cap, so the caller's UI should surface that. */
+export async function generateImage(modelId: string, prompt: string, quality?: string): Promise<Buffer> {
   const model = IMAGE_MODELS.find((m) => m.id === modelId);
   if (!model) throw new Error(`unknown image model "${modelId}"`);
   const key = await getProviderKey(model.provider);
@@ -372,11 +392,14 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
       size: model.id === 'dall-e-3' ? '1792x1024' : '1536x1024', // landscape
     };
     if (model.id === 'dall-e-3') body.response_format = 'b64_json';
-    const res = await fetch('https://api.openai.com/v1/images/generations', {
+    if (model.id === 'gpt-image-1') {
+      body.quality = quality === 'low' || quality === 'high' ? quality : 'medium';
+    }
+    const res = await fetchWithTimeout('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify(body),
-    });
+    }, 55_000, 'OpenAI image generation');
     if (!res.ok) throw apiError('openai', res.status, await res.text());
     const j = await res.json();
     const d = j.data?.[0];
@@ -390,11 +413,11 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
   }
 
   if (model.provider === 'edenai') {
-    const res = await fetch('https://api.edenai.run/v2/image/generation', {
+    const res = await fetchWithTimeout('https://api.edenai.run/v2/image/generation', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({ providers: 'openai', text: prompt, resolution: '1024x1024' }),
-    });
+    }, 50_000, 'Eden AI image generation');
     if (!res.ok) throw apiError('edenai', res.status, await res.text());
     const j = await res.json();
     const r = j.openai ?? Object.values(j)[0];
@@ -411,7 +434,7 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
 
   // Gemini API — two shapes: Imagen via :predict, Flash Image via generateContent.
   if (model.id.startsWith('imagen')) {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:predict?key=${key}`,
       {
         method: 'POST',
@@ -421,6 +444,8 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
           parameters: { sampleCount: 1, aspectRatio: '16:9' },
         }),
       },
+      50_000,
+      'Gemini Imagen generation',
     );
     if (!res.ok) throw apiError('gemini', res.status, await res.text());
     const j = await res.json();
@@ -429,7 +454,7 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
     return Buffer.from(b64, 'base64');
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${key}`,
     {
       method: 'POST',
@@ -439,6 +464,8 @@ export async function generateImage(modelId: string, prompt: string): Promise<Bu
         generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
       }),
     },
+    50_000,
+    'Gemini image generation',
   );
   if (!res.ok) throw apiError('gemini', res.status, await res.text());
   const j = await res.json();

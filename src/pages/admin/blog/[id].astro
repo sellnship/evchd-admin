@@ -4,6 +4,7 @@ import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { sql, type Article } from '../../../lib/db';
 import { getAvailableImageModels, getDefaultImageModel } from '../../../lib/llm';
 import { getCategories } from '../../../lib/categories';
+import { estimateImageCostUsd, estimateImageTimeSec, formatUsd, GPT_IMAGE_QUALITIES } from '../../../lib/apiCost';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -43,6 +44,19 @@ const err = Astro.url.searchParams.get('err');
 const imageModels = await getAvailableImageModels();
 const imagesReady = imageModels.length > 0;
 const defaultImageModel = await getDefaultImageModel();
+
+// Estimated cost/time per model (+ per quality tier for gpt-image-1), keyed
+// for the client-side JS below — "gpt-image-1:low" etc, else just the model id.
+const imageEstimates: Record<string, { cost: string; time: number }> = {};
+for (const m of imageModels) {
+  if (m.id === 'gpt-image-1') {
+    for (const q of GPT_IMAGE_QUALITIES) {
+      imageEstimates[`gpt-image-1:${q}`] = { cost: formatUsd(estimateImageCostUsd(m.id, q)), time: estimateImageTimeSec(m.id, q) };
+    }
+  } else {
+    imageEstimates[m.id] = { cost: formatUsd(estimateImageCostUsd(m.id)), time: estimateImageTimeSec(m.id) };
+  }
+}
 
 // Default image prompt "according to the article", editable before generating:
 // prefer the queued topic's image scene, else derive one from title/category.
@@ -134,7 +148,16 @@ const hasPipelineReport = Boolean(
                     <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
                   ))}
                 </select>
+                <select class="form-select form-select-sm w-auto" id="bodyImgQuality">
+                  {GPT_IMAGE_QUALITIES.map((q) => (
+                    <option value={q} selected={q === 'medium'}>{q}</option>
+                  ))}
+                </select>
                 <button class="btn btn-outline-light-subtle btn-sm flex-shrink-0" type="button" id="bodyImgBtn">Generate &amp; Insert</button>
+              </div>
+              <div class="small text-secondary mt-1" id="bodyImgEstimate"></div>
+              <div class="progress mt-1 d-none" style="height: 6px;" id="bodyImgProgressWrap">
+                <div class="progress-bar" id="bodyImgProgressBar" role="progressbar" style="width: 0%"></div>
               </div>
               <div class="small text-secondary mt-1" id="bodyImgStatus">Generates 16:9 (no watermark), uploads, and inserts the markdown where your cursor is.</div>
             </div>
@@ -168,11 +191,13 @@ const hasPipelineReport = Boolean(
 
         <div class="card p-3 mb-3">
           <h2 class="h6 fw-bold">Hero image</h2>
-          {article.hero_image ? (
-            <img class="hero-thumb mb-2" src={article.hero_image} alt="hero" />
-          ) : (
-            <p class="small text-secondary">No hero yet.</p>
-          )}
+          <div id="heroImageBox">
+            {article.hero_image ? (
+              <img class="hero-thumb mb-2" src={article.hero_image} alt="hero" />
+            ) : (
+              <p class="small text-secondary mb-2">No hero yet.</p>
+            )}
+          </div>
           <label class="form-label small mb-1">Upload your own</label>
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
           <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
@@ -188,17 +213,32 @@ const hasPipelineReport = Boolean(
               </div>
             ) : (
               <>
-                <textarea class="form-control form-control-sm mb-2" name="image_prompt" form="genheroForm" rows="3" required
+                <textarea class="form-control form-control-sm mb-2" id="heroPrompt" rows="3" required
                   placeholder="Describe the SCENE (vehicle & style rules are added automatically)">{defaultScene}</textarea>
-                <label class="form-label small mb-1">Image model</label>
-                <select class="form-select form-select-sm mb-2" name="image_model" form="genheroForm">
-                  {imageModels.map((m) => (
-                    <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
-                  ))}
-                </select>
-                <button class="btn btn-accent btn-sm w-100" type="submit" form="genheroForm"
-                  onclick="this.textContent='Generating… (~20s)'; ">🎨 Generate Hero</button>
-                <div class="small text-secondary mt-1">Generates 16:9, brands it (1200×675 + logo), saves to this article.</div>
+                <div class="row g-2 mb-2">
+                  <div class="col-8">
+                    <label class="form-label small mb-1">Image model</label>
+                    <select class="form-select form-select-sm" id="heroModel">
+                      {imageModels.map((m) => (
+                        <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div class="col-4">
+                    <label class="form-label small mb-1">Quality</label>
+                    <select class="form-select form-select-sm" id="heroQuality">
+                      {GPT_IMAGE_QUALITIES.map((q) => (
+                        <option value={q} selected={q === 'medium'}>{q}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div class="small text-secondary mb-2" id="heroEstimate"></div>
+                <button class="btn btn-accent btn-sm w-100" type="button" id="heroGenBtn">🎨 Generate Hero</button>
+                <div class="progress mt-2 d-none" style="height: 6px;" id="heroProgressWrap">
+                  <div class="progress-bar" id="heroProgressBar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="small text-secondary mt-1" id="heroStatus">Generates 16:9, brands it (1200×675 + logo), saves to this article.</div>
               </>
             )}
           </div>
@@ -257,30 +297,117 @@ const hasPipelineReport = Boolean(
     </div>
   </form>
 
-  {!isNew && (
-    // Separate form for AI hero generation — referenced via form="genheroForm"
-    // by the controls inside the hero card (HTML forms cannot nest).
-    <form id="genheroForm" method="post" action="/admin/api/blog/genhero">
-      <input type="hidden" name="id" value={String(article.id)} />
-    </form>
-  )}
-
   {!isNew && imagesReady && (
-    <script define:vars={{ articleId: article.id }}>
+    <script define:vars={{ articleId: article.id, imageEstimates }}>
+      function estimateFor(model, quality) {
+        const key = model === 'gpt-image-1' ? `gpt-image-1:${quality}` : model;
+        return imageEstimates[key] || { cost: '~$0.04', time: 20 };
+      }
+
+      // Fake-but-honest progress: no incremental status is available from these
+      // non-streaming image APIs, so this eases toward ~90% over the estimated
+      // time and only jumps to 100% once the request actually resolves.
+      function startProgress(barEl, wrapEl, estimateSec) {
+        wrapEl.classList.remove('d-none');
+        barEl.style.width = '0%';
+        const start = Date.now();
+        const totalMs = Math.max(3000, estimateSec * 1000);
+        const timer = setInterval(() => {
+          const pct = Math.min(90, (90 * (Date.now() - start)) / totalMs);
+          barEl.style.width = pct + '%';
+        }, 200);
+        return () => {
+          clearInterval(timer);
+          barEl.style.width = '100%';
+          setTimeout(() => wrapEl.classList.add('d-none'), 400);
+        };
+      }
+
+      // ── Hero image ────────────────────────────────────────────────────────
+      const heroBtn = document.getElementById('heroGenBtn');
+      if (heroBtn) {
+        const heroModelEl = document.getElementById('heroModel');
+        const heroQualityEl = document.getElementById('heroQuality');
+        const heroQualityWrap = heroQualityEl.closest('.col-4');
+        const heroEstimateEl = document.getElementById('heroEstimate');
+        const heroStatusEl = document.getElementById('heroStatus');
+        const heroProgressBar = document.getElementById('heroProgressBar');
+        const heroProgressWrap = document.getElementById('heroProgressWrap');
+
+        function refreshHeroEstimate() {
+          const isGpt = heroModelEl.value === 'gpt-image-1';
+          heroQualityWrap.style.display = isGpt ? '' : 'none';
+          const est = estimateFor(heroModelEl.value, heroQualityEl.value);
+          let note = `Estimated cost: ${est.cost} · estimated time: ~${est.time}s`;
+          if (isGpt && heroQualityEl.value === 'high') note += ' — close to this plan\'s 60s limit, may time out.';
+          heroEstimateEl.textContent = note;
+        }
+        heroModelEl.addEventListener('change', refreshHeroEstimate);
+        heroQualityEl.addEventListener('change', refreshHeroEstimate);
+        refreshHeroEstimate();
+
+        heroBtn.addEventListener('click', async () => {
+          const prompt = document.getElementById('heroPrompt').value.trim();
+          if (!prompt) { heroStatusEl.textContent = 'Describe the scene first.'; return; }
+          const est = estimateFor(heroModelEl.value, heroQualityEl.value);
+          heroBtn.disabled = true;
+          heroStatusEl.textContent = `Generating… (~${est.time}s, ${est.cost})`;
+          const finishProgress = startProgress(heroProgressBar, heroProgressWrap, est.time);
+          try {
+            const form = new FormData();
+            form.set('id', String(articleId));
+            form.set('image_prompt', prompt);
+            form.set('image_model', heroModelEl.value);
+            form.set('image_quality', heroQualityEl.value);
+            const res = await fetch('/admin/api/blog/genhero', { method: 'POST', body: form });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'hero generation failed');
+            document.getElementById('heroImageBox').innerHTML =
+              `<img class="hero-thumb mb-2" src="${data.url}" alt="hero" />`;
+            heroStatusEl.textContent = '✓ Hero generated and saved.';
+          } catch (e) {
+            heroStatusEl.textContent = '✗ ' + e.message;
+          } finally {
+            finishProgress();
+            heroBtn.disabled = false;
+          }
+        });
+      }
+
+      // ── In-body image ────────────────────────────────────────────────────
       const btn = document.getElementById('bodyImgBtn');
       const statusEl = document.getElementById('bodyImgStatus');
+      const bodyModelEl = document.getElementById('bodyImgModel');
+      const bodyQualityEl = document.getElementById('bodyImgQuality');
+      const bodyEstimateEl = document.getElementById('bodyImgEstimate');
+      const bodyProgressBar = document.getElementById('bodyImgProgressBar');
+      const bodyProgressWrap = document.getElementById('bodyImgProgressWrap');
+
+      function refreshBodyEstimate() {
+        const isGpt = bodyModelEl.value === 'gpt-image-1';
+        bodyQualityEl.style.display = isGpt ? '' : 'none';
+        const est = estimateFor(bodyModelEl.value, bodyQualityEl.value);
+        bodyEstimateEl.textContent = `Estimated cost: ${est.cost} · estimated time: ~${est.time}s`;
+      }
+      bodyModelEl?.addEventListener('change', refreshBodyEstimate);
+      bodyQualityEl?.addEventListener('change', refreshBodyEstimate);
+      refreshBodyEstimate();
+
       btn?.addEventListener('click', async () => {
         const editor = document.getElementById('bodyEditor');
         const prompt = document.getElementById('bodyImgPrompt').value.trim();
-        const model = document.getElementById('bodyImgModel').value;
+        const model = bodyModelEl.value;
+        const quality = bodyQualityEl.value;
         if (!prompt) { statusEl.textContent = 'Describe the scene first.'; return; }
+        const est = estimateFor(model, quality);
         btn.disabled = true;
-        statusEl.textContent = 'Generating… (~20s)';
+        statusEl.textContent = `Generating… (~${est.time}s, ${est.cost})`;
+        const finishProgress = startProgress(bodyProgressBar, bodyProgressWrap, est.time);
         try {
           const res = await fetch('/admin/api/blog/genimage', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ id: articleId, prompt, image_model: model }),
+            body: JSON.stringify({ id: articleId, prompt, image_model: model, image_quality: quality }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'generation failed');
@@ -292,6 +419,7 @@ const hasPipelineReport = Boolean(
         } catch (e) {
           statusEl.textContent = '✗ ' + e.message;
         } finally {
+          finishProgress();
           btn.disabled = false;
         }
       });

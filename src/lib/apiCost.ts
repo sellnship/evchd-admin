@@ -20,13 +20,39 @@ const CHAT_PRICE_PER_1K: Record<string, { prompt: number; completion: number }> 
   'grok-3': { prompt: 0.003, completion: 0.015 },
 };
 
-// Flat per-image estimate (image APIs don't bill by token).
+// Flat per-image estimate (image APIs don't bill by token). gpt-image-1's actual
+// cost depends heavily on the "quality" tier, so it gets its own sub-table.
 const IMAGE_COST_USD: Record<string, number> = {
-  'gpt-image-1': 0.04,
-  'gemini-2.5-flash-image': 0.02,
-  'imagen-4.0-generate-001': 0.02,
+  'gemini-2.5-flash-image': 0.04,
+  'imagen-4.0-generate-001': 0.04,
   'dall-e-3': 0.08,
-  'edenai-openai': 0.04,
+  'edenai-openai': 0.05,
+};
+
+export const GPT_IMAGE_QUALITIES = ['low', 'medium', 'high'] as const;
+export type GptImageQuality = (typeof GPT_IMAGE_QUALITIES)[number];
+
+const GPT_IMAGE_1_COST_USD: Record<GptImageQuality, number> = {
+  low: 0.02,
+  medium: 0.07,
+  high: 0.19,
+};
+
+// Rough wall-clock time on OpenAI's non-streaming images endpoint at 1536x1024 —
+// used only to drive the UI's estimate text and progress-bar pacing, not billing.
+// "high" runs close to Vercel Hobby's 60s hard function cap (see lib/llm.ts's
+// fetchWithTimeout, 50s) and can fail there; the UI should flag that risk.
+const GPT_IMAGE_1_TIME_SEC: Record<GptImageQuality, number> = {
+  low: 12,
+  medium: 25,
+  high: 48,
+};
+
+const IMAGE_TIME_SEC: Record<string, number> = {
+  'gemini-2.5-flash-image': 8,
+  'imagen-4.0-generate-001': 10,
+  'dall-e-3': 15,
+  'edenai-openai': 20,
 };
 
 export function estimateChatCostUsd(usage: UsageEntry[], model: string): number {
@@ -35,8 +61,14 @@ export function estimateChatCostUsd(usage: UsageEntry[], model: string): number 
   return usage.reduce((sum, u) => sum + (u.promptTokens / 1000) * price.prompt + (u.completionTokens / 1000) * price.completion, 0);
 }
 
-export function estimateImageCostUsd(model: string): number {
+export function estimateImageCostUsd(model: string, quality?: string): number {
+  if (model === 'gpt-image-1') return GPT_IMAGE_1_COST_USD[quality as GptImageQuality] ?? GPT_IMAGE_1_COST_USD.medium;
   return IMAGE_COST_USD[model] ?? 0.04;
+}
+
+export function estimateImageTimeSec(model: string, quality?: string): number {
+  if (model === 'gpt-image-1') return GPT_IMAGE_1_TIME_SEC[quality as GptImageQuality] ?? GPT_IMAGE_1_TIME_SEC.medium;
+  return IMAGE_TIME_SEC[model] ?? 15;
 }
 
 export function formatUsd(amount: number): string {

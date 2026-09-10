@@ -6,11 +6,14 @@ import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
 import { composeHero } from '../../../../lib/hero';
 
 // Generate a hero image with the selected fal.ai model, brand it (1200×675
-// WebP + logo), upload to Vercel Blob, and save it on the article.
-export const POST: APIRoute = async ({ request, redirect }) => {
+// WebP + logo), upload to Vercel Blob, and save it on the article. Returns
+// JSON — the editor page calls this via fetch so it can show a live progress
+// bar instead of a blocking full-page POST.
+export const POST: APIRoute = async ({ request }) => {
   const form = await request.formData();
   const id = String(form.get('id') ?? '');
   const modelId = String(form.get('image_model') ?? '');
+  const quality = String(form.get('image_quality') ?? '');
   const scene = String(form.get('image_prompt') ?? '').trim();
 
   try {
@@ -34,7 +37,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       `Absolutely avoid: kick scooter, standing scooter, stand-on scooter, Segway, slim deck, ` +
       `person standing on scooter, scooter with no seat.`;
 
-    const base = await generateImage(modelId, prompt);
+    const base = await generateImage(modelId, prompt, quality);
     const webp = await composeHero(base);
 
     const heroSlug = lang === 'hi' ? `${slug}-hi` : slug;
@@ -47,8 +50,13 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
     await sql()`UPDATE articles SET hero_image = ${blob.url}, updated_at = now() WHERE id = ${Number(id)}`;
     await logActivity('hero.generate', { slug, lang, model: modelId });
-    return redirect(`/admin/blog/${id}?saved=1`);
+    return new Response(JSON.stringify({ url: blob.url }), {
+      headers: { 'content-type': 'application/json' },
+    });
   } catch (e: any) {
-    return redirect(`/admin/blog/${id || 'new'}?err=${encodeURIComponent(e?.message ?? 'hero generation failed')}`);
+    return new Response(JSON.stringify({ error: e?.message ?? 'hero generation failed' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 };
