@@ -16,6 +16,8 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const title = String(form.get('title') ?? '').trim();
   const description = String(form.get('description') ?? '').trim();
   const category = String(form.get('category') ?? '').trim();
+  const author = String(form.get('author') ?? '').trim();
+  const reviewed_by = String(form.get('reviewed_by') ?? '').trim();
   const body_md = String(form.get('body_md') ?? '');
   const tags = String(form.get('tags') ?? '')
     .split(',')
@@ -54,17 +56,21 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       await q`
         UPDATE articles SET
           title = ${title}, description = ${description}, category = ${category},
+          author = COALESCE(NULLIF(${author}, ''), author),
+          reviewed_by = COALESCE(NULLIF(${reviewed_by}, ''), reviewed_by),
           tags = ${tags}, body_md = ${body_md},
           hero_image = COALESCE(${heroUrl}, hero_image),
           date_modified = now(), updated_at = now()
         WHERE id = ${Number(id)}`;
     } else {
       const rows = (await q`
-        INSERT INTO articles (slug, lang, title, description, category, hero_image, tags, body_md, status, source)
-        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? ''}, ${tags}, ${body_md}, 'draft', 'manual')
+        INSERT INTO articles (slug, lang, title, description, category, hero_image, author, reviewed_by, tags, body_md, status, source)
+        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? ''}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual')
         ON CONFLICT (slug, lang) DO UPDATE SET
           title = EXCLUDED.title, description = EXCLUDED.description, category = EXCLUDED.category,
           hero_image = COALESCE(NULLIF(EXCLUDED.hero_image, ''), articles.hero_image),
+          author = COALESCE(NULLIF(EXCLUDED.author, ''), articles.author),
+          reviewed_by = COALESCE(NULLIF(EXCLUDED.reviewed_by, ''), articles.reviewed_by),
           tags = EXCLUDED.tags, body_md = EXCLUDED.body_md, updated_at = now()
         RETURNING id`) as { id: number }[];
       articleId = String(rows[0].id);

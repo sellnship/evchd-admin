@@ -5,6 +5,7 @@ import { sql, type Article } from '../../../lib/db';
 import { getAvailableImageModels, getDefaultImageModel } from '../../../lib/llm';
 import { getCategories } from '../../../lib/categories';
 import { estimateImageCostUsd, estimateImageTimeSec, formatUsd, GPT_IMAGE_QUALITIES } from '../../../lib/apiCost';
+import { getAuthors } from '../../../lib/authors';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -16,6 +17,8 @@ let article: Partial<Article> = {
   description: '',
   category: '',
   hero_image: '',
+  author: 'rajinder-singh',
+  reviewed_by: 'rajinder-singh',
   tags: [],
   body_md: '',
   status: 'draft',
@@ -78,6 +81,8 @@ if (!isNew && article.slug) {
 const categories = await getCategories();
 if (article.category && !categories.includes(article.category)) categories.unshift(article.category);
 
+const authors = await getAuthors();
+
 // Pipeline audit trail (populated only by the AI pipeline, admin/blog/ai.astro -- a manually
 // created/edited article simply has these null). Advisory only: matches the same "flag, don't
 // block" gate the pipeline UI itself uses, since this page is also the one place a manual edit
@@ -131,11 +136,23 @@ const hasPipelineReport = Boolean(
               <label class="form-label small">Tags (comma-separated)</label>
               <input class="form-control" name="tags" value={(article.tags ?? []).join(', ')} />
             </div>
+            <div class="col-md-6">
+              <label class="form-label small">Author <a href="/admin/authors" class="small text-secondary ms-1">(manage)</a></label>
+              <select class="form-select" name="author">
+                {authors.map((a) => <option value={a.id} selected={a.id === article.author}>{a.name}</option>)}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Reviewed by</label>
+              <select class="form-select" name="reviewed_by">
+                {authors.map((a) => <option value={a.id} selected={a.id === article.reviewed_by}>{a.name}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 
         <div class="card p-3">
-          <label class="form-label small fw-bold">Body (Markdown)</label>
+          <label class="form-label small fw-bold">Body (Markdown) <span id="bodyWordCount" class="text-secondary fw-normal"></span></label>
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
           {!isNew && imagesReady && (
             <div class="border-top border-secondary-subtle pt-2 mt-2">
@@ -296,6 +313,21 @@ const hasPipelineReport = Boolean(
       </div>
     </div>
   </form>
+
+  <script>
+    // Live word count on the Body textarea — matches the AI Generator page's
+    // counter, but this page didn't have one at all (manual edits and
+    // continuing an AI draft here both need to see it against the 700-word
+    // minimum, not just during the initial AI Generator run).
+    const bodyEditorEl = document.getElementById('bodyEditor');
+    const bodyWordCountEl = document.getElementById('bodyWordCount');
+    function updateBodyWordCount() {
+      const words = bodyEditorEl.value.trim() ? bodyEditorEl.value.trim().split(/\s+/).length : 0;
+      bodyWordCountEl.textContent = `(${words} word${words === 1 ? '' : 's'})`;
+    }
+    bodyEditorEl.addEventListener('input', updateBodyWordCount);
+    updateBodyWordCount();
+  </script>
 
   {!isNew && imagesReady && (
     <script define:vars={{ articleId: article.id, imageEstimates }}>

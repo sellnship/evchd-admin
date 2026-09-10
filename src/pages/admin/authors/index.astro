@@ -1,0 +1,75 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getAuthors } from '../../../lib/authors';
+
+const authors = await getAuthors();
+const saved = Astro.url.searchParams.get('saved');
+const deleted = Astro.url.searchParams.get('deleted');
+const err = Astro.url.searchParams.get('err');
+---
+<AdminLayout title="Authors" active="authors" sub={`${authors.length} author(s) — used for blog bylines & reviewers`}>
+  {saved && <div class="alert alert-success py-2 small">Saved.</div>}
+  {deleted && <div class="alert alert-success py-2 small">Deleted.</div>}
+  {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card p-3">
+        {authors.length === 0 ? (
+          <p class="text-secondary small mb-0">No authors yet — add one on the right.</p>
+        ) : (
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
+              <tbody>
+                {authors.map((a) => (
+                  <tr>
+                    <td>
+                      <div class="fw-semibold">{a.name}</div>
+                      <div class="mono text-secondary small">{a.id}</div>
+                    </td>
+                    <td class="small">{a.role}</td>
+                    <td class="text-end">
+                      <a class="btn btn-sm btn-outline-light-subtle" href={`/admin/authors/${a.id}`}>Edit</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold mb-3">＋ Add author</h2>
+        <form method="post" action="/admin/api/authors/save">
+          <div class="mb-2">
+            <label class="form-label small">Name</label>
+            <input class="form-control" name="name" required placeholder="e.g. Priya Sharma" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Role</label>
+            <input class="form-control" name="role" placeholder="e.g. EV Content Editor, EV Chandigarh" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Bio</label>
+            <textarea class="form-control" name="bio" rows="4" placeholder="2-3 sentences, shown in the byline box"></textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Photo path</label>
+            <input class="form-control mono" name="photo" placeholder="/images/authors/priya-sharma.jpg" />
+            <div class="small text-secondary mt-1">Optional — falls back to initials if the file doesn't exist yet.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Sort order</label>
+            <input class="form-control" type="number" name="sort" value="100" style="max-width: 100px;" />
+          </div>
+          <button class="btn btn-accent w-100" type="submit">Add author</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

@@ -1,0 +1,59 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getAuthor } from '../../../lib/authors';
+
+const { id } = Astro.params;
+const author = await getAuthor(String(id));
+if (!author) return Astro.redirect('/admin/authors');
+---
+<AdminLayout title={`Edit: ${author.name}`} active="authors" sub={`/admin/authors/${author.id}`}>
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card p-3">
+        <form method="post" action="/admin/api/authors/save">
+          <input type="hidden" name="id" value={author.id} />
+          <div class="mb-2">
+            <label class="form-label small">Name</label>
+            <input class="form-control" name="name" value={author.name} required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Role</label>
+            <input class="form-control" name="role" value={author.role} />
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Bio</label>
+            <textarea class="form-control" name="bio" rows="5">{author.bio}</textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Photo path</label>
+            <input class="form-control mono" name="photo" value={author.photo} placeholder="/images/authors/name.jpg" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Sort order</label>
+            <input class="form-control" type="number" name="sort" value={author.sort} style="max-width: 100px;" />
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-accent" type="submit">💾 Save</button>
+            <a class="btn btn-outline-light-subtle" href="/admin/authors">← Back</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card p-3">
+        <h2 class="h6 fw-bold">Delete</h2>
+        <p class="small text-secondary">
+          Articles already attributed to <b>{author.name}</b> keep the id as plain text and are unaffected —
+          you'd just need to re-pick an author on them afterward.
+        </p>
+        <form method="post" action="/admin/api/authors/delete"
+              onsubmit={`return confirm('Delete ${author.name.replace(/'/g, "\\'")}? This cannot be undone.')`}>
+          <input type="hidden" name="id" value={author.id} />
+          <button class="btn btn-outline-danger btn-sm" type="submit">Delete author</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
