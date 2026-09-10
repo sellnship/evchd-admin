@@ -34,6 +34,8 @@ export const HARD_PROHIBITIONS = [
   'No "Rule of Three" -- do not group adjectives, verbs, or examples into balanced triplets ("fast, reliable, and secure"); expand on one item instead, or split into separate sentences.',
   'At most one bulleted/numbered list built from "**Bold Term**: explanation" items in the whole article -- that exact structure is one of the most recognizable AI tells there is; explain the rest in prose.',
   'No hedging -- do not write "I think," "perhaps," "it seems," "maybe," or "might" to soften a claim. State things directly; if something genuinely varies, say so as a flat fact instead.',
+  'Vary sentence length and rhythm deliberately -- do not write three or more sentences in a row that are all roughly the same length and Subject-Verb-Object shape. Follow a longer, explanatory sentence with a short, direct one.',
+  'Do not open the article, or any section, with a throat-clearing sentence that just announces what you are about to cover ("This article aims to explore...", "In this guide, we will discuss...", "Let\'s dive into..."). Start with the actual fact, scenario, or point instead.',
 ].join('\n- ');
 
 // The site's own fact/brand rules, previously enforced only by scripts/prompts/draft.md +

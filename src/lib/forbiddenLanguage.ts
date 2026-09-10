@@ -34,6 +34,10 @@ export const HARD_BAN_WORDS = [
   'ephemeral', 'resplendent', 'indomitable', 'unfathomable', 'monumental', 'ethereal',
   'imperishable', 'unyielding', 'boundless', 'otherworldly', 'bioluminescent', 'luminescent',
   'mosaic', 'woven', 'sculpted', 'traversed', 'guidelines', 'boundaries', 'inevitable',
+  // "Flowery metaphor" / "vague adjective" 2026 blacklist categories (user-supplied) -- these were
+  // only banned as part of longer fixed phrases below (e.g. "beacon of", "a myriad of"), so a bare
+  // occurrence outside those exact phrases (e.g. "a beacon in the landscape of...") slipped through.
+  'beacon', 'myriad', 'unwavering', 'journey', 'roadmap', 'game-changer',
   'precision', 'surgical', 'arena', 'arsenal', 'bombard', 'bloated', 'boosts', 'breeze', 'buzz',
   'cadence', 'capture', 'captivate', 'catapult', 'compelling', 'cornerstone', 'convey', 'craft',
   'crafting', 'despair', 'diverge', 'drowning', 'embark', 'employ', 'engage', 'engaging',
@@ -102,6 +106,12 @@ export const HARD_BAN_PHRASES = [
   // Second consolidation pass: several more user-supplied lists, including basic connectives
   // ("for example", "therefore", "although", etc.) explicitly requested despite their generic,
   // everyday use elsewhere in English -- accepted deliberately, not an oversight.
+  // "Hook transitions" / "hedging" / "fake-experience" categories (user-supplied 2026 list) --
+  // these were only in the prompt-side HUMANIZER_WORDS list (blogEditorialRules.ts, "please avoid"
+  // guidance the model can ignore), not actually scanned/enforced here.
+  'dive into', 'dive in', 'it is important to consider', 'while it is true',
+  'it could be argued that', 'generally speaking', "that's only half the story", 'real talk',
+  'why does this matter', 'as a business owner, you know', 'aims to',
   'along with', 'on the contrary', "in today's rapidly evolving market", 'at the core of',
   'a myriad of', 'on a broader scale', 'in the context of', 'from a holistic perspective',
   'taking into account', 'a dynamic interplay', 'evolving over time', 'intricacies involved',

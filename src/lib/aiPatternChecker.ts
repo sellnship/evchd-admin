@@ -64,6 +64,25 @@ export function checkAiPatterns(markdown: string): AiPatternResult {
     }
   }
 
+  // Sentence-length burstiness -- distinct from the paragraph-length check above. AI models are
+  // statistically incentivised toward a monotonous rhythm even within a single paragraph (three
+  // ~15-20 word Subject-Verb-Object sentences in a row is the classic "balanced paragraph" tell);
+  // real writing mixes short punches with longer explanatory sentences. Sentence lengths naturally
+  // vary more than paragraph word counts, so this uses a looser stddev/mean threshold than the
+  // paragraph check, and requires enough sentences that a couple of naturally-similar ones don't
+  // trip it.
+  const sentenceLengths = (paras.join(' ').match(/[^.!?]+[.!?]+/g) || ([] as string[]))
+    .map((s: string) => s.trim().split(/\s+/).filter(Boolean).length)
+    .filter((n) => n >= 3);
+  if (sentenceLengths.length >= 8) {
+    const sMean = sentenceLengths.reduce((a, b) => a + b, 0) / sentenceLengths.length;
+    const sSd = stddev(sentenceLengths);
+    if (sMean > 0 && sSd / sMean < 0.35) {
+      deductions += 12;
+      flags.push(`Sentence lengths are unusually uniform (low burstiness -- avg ${sMean.toFixed(0)} words, stddev ${sSd.toFixed(1)}) -- mix short punches with longer explanatory sentences`);
+    }
+  }
+
   // Em dashes and semicolons are both a hard ban in forbiddenLanguage.ts (any single occurrence
   // blocks the humanize retry loop) plus a deterministic strip in blogEditorialRules.ts, so
   // neither is re-scored here to avoid double-counting the same violation.
