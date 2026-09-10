@@ -281,13 +281,16 @@ export function checkAiPatterns(markdown: string): AiPatternResult {
   }
 
   // Disguised-conclusion heading -- stripConclusionHeading() already removes a literal
-  // "Conclusion" heading outright, but a renamed equivalent as the LAST heading in the article
-  // ("Looking Ahead," "Final Thoughts," etc.) is the same tell under a different name.
+  // "Conclusion" heading outright, but a renamed equivalent is the same tell under a different
+  // name. ENDING_RULE (blogEditorialRules.ts) has the article end on "## Sources", so the actual
+  // closing section is the heading BEFORE that, not necessarily the last heading in the document.
   const headings = [...markdown.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => m[1].trim());
-  const lastHeading = headings[headings.length - 1];
-  if (lastHeading && /^(looking ahead|final thoughts|wrapping up|key takeaways|the bottom line|in summary)$/i.test(lastHeading)) {
+  const genericClosingRe = /^(looking ahead|final thoughts|wrapping up|key takeaways|the bottom line|in summary|summary)$/i;
+  const endsWithSources = headings.length > 0 && /^sources$/i.test(headings[headings.length - 1]);
+  const closingHeading = endsWithSources ? headings[headings.length - 2] : headings[headings.length - 1];
+  if (closingHeading && genericClosingRe.test(closingHeading)) {
     deductions += 10;
-    flags.push(`Final heading "${lastHeading}" reads as a disguised "Conclusion" -- rename to something specific and topic-relevant, and check the section doesn't just recap claims already made`);
+    flags.push(`Closing section heading "${closingHeading}" reads as a disguised "Conclusion" -- rename to something specific to this article's topic (never reused across articles), and check the section doesn't just recap claims already made`);
   }
 
   return { score: Math.max(0, 100 - deductions), flags };

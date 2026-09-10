@@ -96,10 +96,16 @@ const HUMANIZER_WORDS = [
 export const HUMANIZER_PHRASE_LIST = HUMANIZER_WORDS.join(', ');
 
 export const ENDING_RULE =
-  'Never append a conventional "Conclusion" or generic wrap-up summary paragraph. End with the ' +
-  'last useful factual section, then a "## Sources" section listing the data sources relied on ' +
-  '(e.g. "the Central Motor Vehicles Rules" or "the JERC tariff order"). Do not add a ' +
-  'call-to-action or sales pitch -- the site adds that separately.';
+  'Never append a conventional "Conclusion" or generic wrap-up summary paragraph, and never leave ' +
+  'the article trailing off into the "## Sources" section with no real close. Instead, end the ' +
+  'substantive content with ONE final section whose heading is specific to THIS article\'s topic ' +
+  '(e.g. "What This Means for a Sector 44 Commute", "The Real Three-Year Cost Gap" -- phrased fresh ' +
+  'every time, never reused word-for-word across articles) and whose content gives the single most ' +
+  'actionable takeaway for the reader, not a recap of points already made. Never title that section ' +
+  '"Conclusion" or a disguised equivalent ("Final Thoughts", "Looking Ahead", "Wrapping Up", "Key ' +
+  'Takeaways", "The Bottom Line", "In Summary", "Summary"). After that section, add a "## Sources" ' +
+  'section listing the data sources relied on (e.g. "the Central Motor Vehicles Rules" or "the JERC ' +
+  'tariff order"). Do not add a call-to-action or sales pitch -- the site adds that separately.';
 
 /** Strips a literal "Conclusion" heading (## Conclusion, ### Conclusion, **Conclusion**, etc.)
  * and everything under it as a deterministic safety net -- prompts ask the model not to write
