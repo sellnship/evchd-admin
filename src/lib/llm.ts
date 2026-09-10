@@ -182,6 +182,145 @@ export function extractJSON<T>(text: string): T {
   return JSON.parse(raw.slice(start).replace(/```\s*$/, '').trim()) as T;
 }
 
+function parseRetryDelayMs(message: string): number {
+  const retryAfter = message.match(/retry-after[":\s]+(\d+)/i)?.[1];
+  if (retryAfter) return Math.min(15000, Math.max(500, Number(retryAfter) * 1000));
+  const seconds = message.match(/try again in ([\d.]+)s/i)?.[1];
+  if (seconds) return Math.min(15000, Math.max(500, Number(seconds) * 1000));
+  return 3000;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One JSON-structured completion, for the blog pipeline's stage calls (research,
+ * draft, humanize, fact-check, SEO, editorial review, etc — every stage wants
+ * `{...}` back, not prose). Reuses the same provider auth/routing as `complete()`
+ * but additionally: asks for JSON mode where the provider's API supports it,
+ * retries on 429 (honouring Retry-After / "try again in Ns" if present) and on
+ * a JSON-parse failure (one corrective retry telling the model its last reply
+ * didn't parse), and stops once `deadline` (a Date.now() timestamp) has passed
+ * so a slow stage fails cleanly instead of running into Vercel's hard function
+ * timeout with nothing surfaced to the caller.
+ */
+export async function completeJSON<T>(
+  prompt: string,
+  {
+    system,
+    maxTokens = 4000,
+    provider,
+    deadline = Infinity,
+  }: { system?: string; maxTokens?: number; provider?: string; deadline?: number } = {},
+): Promise<T> {
+  const providerId =
+    provider && PROVIDERS.some((p) => p.id === provider) ? provider : await getActiveProvider();
+  const key = await getProviderKey(providerId);
+  const model = await getProviderModel(providerId);
+  if (!key) throw new Error(`No API key configured for ${providerId} — add it in Settings`);
+
+  const maxAttempts = 3;
+  let lastErr: Error = new Error('completeJSON: no attempt was made');
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (Date.now() > deadline) throw lastErr;
+    const correction =
+      attempt > 1 && lastErr instanceof SyntaxError
+        ? '\n\nYour previous response was not valid JSON. Reply with ONLY a single valid JSON object/array — no markdown fences, no commentary before or after it.'
+        : '';
+    try {
+      const text = await rawCompletionForJson(providerId, key, model, system, prompt + correction, maxTokens);
+      return extractJSON<T>(text);
+    } catch (e: any) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      if (e?.status === 429) {
+        const wait = Math.min(parseRetryDelayMs(e.message ?? ''), Math.max(0, deadline - Date.now()));
+        if (wait > 0) await sleep(wait);
+        continue;
+      }
+      if (e instanceof SyntaxError && attempt < maxAttempts) continue; // ask the model to fix its JSON
+      if (attempt < maxAttempts && e?.status >= 500) continue; // transient provider error, just retry
+      throw lastErr;
+    }
+  }
+  throw lastErr;
+}
+
+/** Provider dispatch for completeJSON — same providers as `complete()`, but asks
+ *  for JSON output mode where the API supports it, and threads a system prompt
+ *  through properly instead of prepending it to the user message. */
+async function rawCompletionForJson(
+  providerId: string,
+  key: string,
+  model: string,
+  system: string | undefined,
+  prompt: string,
+  maxTokens: number,
+): Promise<string> {
+  if (providerId === 'anthropic') {
+    try {
+      const client = new Anthropic({ apiKey: key });
+      const msg = await client.messages.create({
+        model,
+        max_tokens: maxTokens,
+        ...(system ? { system } : {}),
+        messages: [{ role: 'user', content: `${prompt}\n\nRespond with ONLY a single valid JSON object/array — no markdown fences, no commentary.` }],
+      });
+      const text = msg.content.find((b) => b.type === 'text');
+      return text && 'text' in text ? text.text : '';
+    } catch (e: any) {
+      if (typeof e?.status === 'number') throw apiError('anthropic', e.status, e.message ?? '');
+      throw e;
+    }
+  }
+
+  if (providerId === 'gemini') {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' },
+        }),
+      },
+    );
+    if (!res.ok) throw apiError('gemini', res.status, await res.text());
+    const j = await res.json();
+    return j.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') ?? '';
+  }
+
+  // OpenAI-compatible chat completions: openai / groq / xai / edenai — all
+  // accept response_format:{type:'json_object'} and a system message.
+  const messages = [
+    ...(system ? [{ role: 'system', content: system }] : []),
+    { role: 'user', content: prompt },
+  ];
+  if (providerId === 'edenai') {
+    const res = await fetch('https://api.edenai.run/v2/llm/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, response_format: { type: 'json_object' } }),
+    });
+    if (!res.ok) throw apiError('edenai', res.status, await res.text());
+    const j = await res.json();
+    return j.choices?.[0]?.message?.content ?? '';
+  }
+  const base =
+    providerId === 'groq' ? 'https://api.groq.com/openai/v1'
+    : providerId === 'xai' ? 'https://api.x.ai/v1'
+    : 'https://api.openai.com/v1';
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, response_format: { type: 'json_object' } }),
+  });
+  if (!res.ok) throw apiError(providerId, res.status, await res.text());
+  const j = await res.json();
+  return j.choices?.[0]?.message?.content ?? '';
+}
+
 // ── Image models (OpenAI + Gemini — reuse the same provider keys) ───────────
 
 export interface ImageModel {

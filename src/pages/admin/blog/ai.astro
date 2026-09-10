@@ -1,0 +1,548 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getActiveProvider, getConfiguredProviders } from '../../../lib/llm';
+import { getCategories } from '../../../lib/categories';
+import { sql } from '../../../lib/db';
+
+// Optional prefill from an existing queued topic row (Topics table's "AI Pipeline" action link,
+// ?slug=...&lang=en|hi) -- falls back to a blank ad-hoc entry when opened directly.
+const slug = Astro.url.searchParams.get('slug') ?? '';
+const initialLang = Astro.url.searchParams.get('lang') === 'hi' ? 'hi' : 'en';
+let prefill = { title: '', category: '', angle: '' };
+if (slug) {
+  const rows = (await sql()`
+    SELECT title, category, angle FROM topics WHERE slug = ${slug} AND lang = ${initialLang}`) as
+    { title: string; category: string; angle: string }[];
+  if (rows[0]) prefill = rows[0];
+}
+
+const configured = await getConfiguredProviders();
+const activeProvider = await getActiveProvider();
+const llmReady = configured.length > 0;
+const categories = await getCategories();
+const categoriesJson = JSON.stringify(categories);
+const providersJson = JSON.stringify(configured.map((p) => p.id));
+
+// Server-side label for the initial (pre-JS) render of the steps list; the client <script> has
+// its own copy (stepDefaultLabel/stepLabel) since it also needs to reset labels between runs.
+function stepLabel(s: string): string {
+  return ({
+    research: 'Research', dedupe: 'Duplicate Check', originality: 'Originality Check', draft: 'Write Article',
+    humanize: 'Humanize', factcheck: 'Fact Check', seo: 'SEO Optimize', aisearch: 'AI Search Optimize',
+    similarity: 'Similarity Screening', editorial: 'Editorial Review',
+  } as Record<string, string>)[s] ?? s;
+}
+---
+<AdminLayout title="AI Blog Pipeline" active="generator" sub="Research, draft, humanize, fact-check, and review an article in one run -- no GitHub involved">
+  {!llmReady && (
+    <div class="alert alert-warning py-2 small mb-3">
+      No LLM key configured — <a href="/admin/settings">add one in Settings</a> to enable this page.
+    </div>
+  )}
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card p-3 mb-3">
+        <h2 class="h6 fw-bold mb-2">⚙ Topic</h2>
+        <div class="row g-2 mb-2">
+          <div class="col-8">
+            <label class="form-label small">Title</label>
+            <input class="form-control" id="f_title" value={prefill.title} placeholder="e.g. Monsoon battery care for low-speed scooters" />
+          </div>
+          <div class="col-4">
+            <label class="form-label small">Language</label>
+            <select class="form-select" id="f_lang">
+              <option value="en" selected={initialLang === 'en'}>English</option>
+              <option value="hi" selected={initialLang === 'hi'}>Hindi</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Editorial angle <span class="text-secondary">(optional)</span></label>
+          <input class="form-control" id="f_angle" value={prefill.angle} placeholder="The specific audience + question this article answers" />
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Source notes / links <span class="text-secondary">(optional -- pasted text/URLs the writer sees verbatim)</span></label>
+          <textarea class="form-control" id="f_notes" rows="3"></textarea>
+        </div>
+        <div class="row g-2">
+          <div class="col-4">
+            <label class="form-label small">Length</label>
+            <select class="form-select" id="f_length">
+              <option value="short">Short (~500-700w)</option>
+              <option value="medium" selected>Medium (~900-1300w)</option>
+              <option value="long">Long (~1600-2200w)</option>
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label small">Category</label>
+            <select class="form-select" id="f_category">
+              {categories.map((c) => <option value={c} selected={c === prefill.category}>{c}</option>)}
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label small">LLM</label>
+            <select class="form-select" id="f_provider">
+              {configured.map((p) => <option value={p.id} selected={p.id === activeProvider}>{p.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div class="mb-2 mt-2">
+          <label class="form-label small">Focus keyword <span class="text-secondary">(optional)</span></label>
+          <input class="form-control" id="f_focus" />
+        </div>
+        <button class="btn btn-accent w-100 mt-2" id="generateBtn" disabled={!llmReady}>✨ Generate Article</button>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card p-3">
+        <p class="fw-bold small mb-2">Pipeline Steps</p>
+        <ul class="list-unstyled mb-0" id="stepsList">
+          {['research', 'dedupe', 'originality', 'draft', 'humanize', 'factcheck', 'seo', 'aisearch', 'similarity', 'editorial'].map((s) => (
+            <li id={`step-${s}`} class="d-flex gap-2 mb-1 small">
+              <span class="step-dot">○</span>
+              <span class="step-detail text-secondary">{stepLabel(s)}</span>
+            </li>
+          ))}
+        </ul>
+        <div id="genError" class="alert alert-danger py-2 small mt-2" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultCard" class="card p-3 mt-3" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="h6 fw-bold mb-0">Generated Article</h2>
+      <span class="badge status-pending">AI-generated draft</span>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="mb-2">
+          <label class="form-label small">Title</label>
+          <input class="form-control" id="rTitle" />
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Excerpt</label>
+          <textarea class="form-control" id="rExcerpt" rows="2"></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Article (Markdown) <span id="wordCount" class="text-secondary"></span></label>
+          <textarea class="form-control mono" id="rContent" rows="18" style="font-size:.82rem;"></textarea>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="button" id="previewBtn" class="btn btn-sm btn-outline-light-subtle">👁 Preview</button>
+          <button type="button" id="copyAiCheckBtn" class="btn btn-sm btn-outline-light-subtle">Copy &amp; Open ZeroGPT</button>
+          <button type="button" id="copyJustDoneBtn" class="btn btn-sm btn-outline-light-subtle">Copy &amp; Open JustDone</button>
+          <button type="button" id="reFactCheckBtn" class="btn btn-sm btn-outline-light-subtle">Re-run Fact Check</button>
+          <button type="button" id="reHumanizeBtn" class="btn btn-sm btn-outline-light-subtle">Re-run Humanize</button>
+          <button type="button" id="reSeoBtn" class="btn btn-sm btn-outline-light-subtle">Re-run SEO</button>
+        </div>
+        <div id="rerunStatus" class="small mt-1" style="display:none;"></div>
+
+        <div class="mt-3">
+          <label class="form-label small">Custom instruction <span class="text-secondary">(e.g. "add a paragraph about X")</span></label>
+          <div class="d-flex gap-2">
+            <textarea class="form-control" id="customInstructionText" rows="2"></textarea>
+            <button type="button" id="applyInstructionBtn" class="btn btn-outline-light-subtle flex-shrink-0">Apply</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="mb-2">
+          <label class="form-label small">Category</label>
+          <select class="form-select" id="rCategory">
+            {categories.map((c) => <option value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Tags (comma separated)</label>
+          <input class="form-control" id="rTags" />
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">SEO Keywords (comma separated)</label>
+          <input class="form-control" id="rKeywords" />
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">SEO Title</label>
+          <input class="form-control" id="rSeoTitle" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Meta Description</label>
+          <textarea class="form-control" id="rSeoDescription" rows="3"></textarea>
+        </div>
+
+        <div id="publishGate" class="alert alert-warning py-2 small" style="display:none;">
+          <div id="publishGateText" class="mb-2"></div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="publishGateCheck" />
+            <label class="form-check-label small" for="publishGateCheck">I've reviewed the flagged issue(s) and still want to publish</label>
+          </div>
+        </div>
+        <div class="d-flex flex-column gap-2">
+          <button type="button" id="saveDraftBtn" class="btn btn-outline-light-subtle">💾 Save as Draft</button>
+          <button type="button" id="publishBtn" class="btn btn-accent">🚀 Save &amp; Publish</button>
+        </div>
+        <div id="saveError" class="alert alert-danger py-2 small mt-2" style="display:none;"></div>
+        <div class="small text-secondary mt-2">Hero/body images are generated on the next screen after saving.</div>
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <button type="button" id="reportToggle" class="btn btn-sm btn-outline-light-subtle">Show Pipeline Report</button>
+      <div id="reportBox" style="display:none;" class="mt-2 small"></div>
+    </div>
+  </div>
+
+  <div id="previewOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1050; align-items:center; justify-content:center;">
+    <div style="background:var(--bs-body-bg); max-width:800px; width:92%; max-height:85vh; overflow:auto; border-radius:8px; padding:1.5rem;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <p class="fw-bold mb-0">Article Preview</p>
+        <button type="button" class="btn-close" id="previewCloseBtn"></button>
+      </div>
+      <div id="previewContent"></div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script define:vars={{ categoriesJson, providersJson, slug, initialLangServer: initialLang }}>
+  const CATEGORIES = JSON.parse(categoriesJson);
+  const PROVIDERS = JSON.parse(providersJson);
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  async function safeJson(res) {
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { throw new Error(`Server error (status ${res.status}): ${(text || 'empty response').slice(0, 200)}`); }
+  }
+
+  const genError = document.getElementById('genError');
+  const resultCard = document.getElementById('resultCard');
+  const generateBtn = document.getElementById('generateBtn');
+  const wordCountEl = document.getElementById('wordCount');
+  let pipeline = {}; // accumulates research/duplicateCheck/originality/factCheck/seoReport/aiSearchReport/similarity/editorialReview/aiPatternCheck
+
+  function setStep(step, status, detail) {
+    const li = document.getElementById(`step-${step}`);
+    if (!li) return;
+    const dot = li.querySelector('.step-dot');
+    dot.textContent = status === 'done' ? '✓' : status === 'error' ? '✗' : status === 'running' ? '…' : '○';
+    dot.style.color = status === 'done' ? '#4ADE80' : status === 'error' ? '#F87171' : status === 'running' ? '#F5A94E' : '';
+    if (detail) li.querySelector('.step-detail').textContent = detail;
+  }
+  function resetSteps() {
+    ['research', 'dedupe', 'originality', 'draft', 'humanize', 'factcheck', 'seo', 'aisearch', 'similarity', 'editorial'].forEach((s) => setStep(s, '', stepDefaultLabel(s)));
+  }
+
+  async function streamPipeline(url, payload, onResult) {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Request failed (HTTP ${res.status}).`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'step') setStep(event.step, event.status, event.detail);
+        else if (event.type === 'error') throw new Error(event.message);
+        else if (event.type === 'result') onResult(event);
+      }
+    }
+  }
+
+  generateBtn.addEventListener('click', async () => {
+    genError.style.display = 'none';
+    resultCard.style.display = 'none';
+    resetSteps();
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating…';
+
+    const provider = document.getElementById('f_provider').value;
+    const lang = document.getElementById('f_lang').value;
+    const genPayload = {
+      title: document.getElementById('f_title').value.trim(),
+      rationale: document.getElementById('f_angle').value.trim() || undefined,
+      category: document.getElementById('f_category').value,
+      length: document.getElementById('f_length').value,
+      sourceNotes: document.getElementById('f_notes').value.trim() || undefined,
+      provider, lang,
+    };
+    const focusKeyword = document.getElementById('f_focus').value.trim() || undefined;
+
+    try {
+      let draftResult = null;
+      await streamPipeline('/admin/api/blog/generate', genPayload, (r) => { draftResult = r; });
+      if (!draftResult) throw new Error('Generation finished without a result.');
+      pipeline = { research: draftResult.research, duplicateCheck: draftResult.duplicateCheck, originality: draftResult.originality };
+      fillResult(draftResult);
+
+      let reviewResult = null;
+      await streamPipeline('/admin/api/blog/review', {
+        title: draftResult.title, category: draftResult.category, contentMarkdown: draftResult.contentMarkdown,
+        research: draftResult.research, focusKeyword, provider, lang,
+        isCommodity: draftResult.originality?.isCommodity || false,
+      }, (r) => { reviewResult = r; });
+      if (!reviewResult) throw new Error('Review finished without a result.');
+
+      pipeline = { ...pipeline, ...reviewResult };
+      fillResult({ ...draftResult, ...reviewResult });
+      renderReport();
+      applyPublishGate();
+    } catch (err) {
+      genError.textContent = err.message || 'Generation failed.';
+      genError.style.display = '';
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = '✨ Generate Article';
+    }
+  });
+
+  function updateWordCount() {
+    const words = document.getElementById('rContent').value.trim().split(/\s+/).filter(Boolean).length;
+    wordCountEl.textContent = `(${words} words)`;
+  }
+  function fillResult(r) {
+    if (r.title != null) document.getElementById('rTitle').value = r.title;
+    if (r.excerpt != null) document.getElementById('rExcerpt').value = r.excerpt;
+    if (r.contentMarkdown != null) document.getElementById('rContent').value = r.contentMarkdown;
+    if (r.category != null) document.getElementById('rCategory').value = CATEGORIES.includes(r.category) ? r.category : CATEGORIES[0];
+    if (r.tags != null) document.getElementById('rTags').value = (r.tags || []).join(', ');
+    if (r.keywords != null) document.getElementById('rKeywords').value = (r.keywords || []).join(', ');
+    if (r.seoTitle != null) document.getElementById('rSeoTitle').value = r.seoTitle;
+    if (r.seoDescription != null) document.getElementById('rSeoDescription').value = r.seoDescription;
+    updateWordCount();
+    resultCard.style.display = '';
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.getElementById('rContent').addEventListener('input', updateWordCount);
+
+  function stepDefaultLabel(s) {
+    return {
+      research: 'Build a sourced fact packet', dedupe: 'Compare against existing articles',
+      originality: 'Check this is not generic content', draft: 'Full draft grounded in research',
+      humanize: 'Natural rhythm, cut AI-sounding phrasing', factcheck: 'Per-claim audit',
+      seo: 'Title, meta description, keywords', aisearch: 'Entity/date clarity for answer engines',
+      similarity: 'Check for copied/overlapping text', editorial: 'Final pass/fail gate',
+    }[s] || '';
+  }
+  function stepLabel(s) {
+    return { research: 'Research', dedupe: 'Duplicate Check', originality: 'Originality Check', draft: 'Write Article',
+      humanize: 'Humanize', factcheck: 'Fact Check', seo: 'SEO Optimize', aisearch: 'AI Search Optimize',
+      similarity: 'Similarity Screening', editorial: 'Editorial Review' }[s] || s;
+  }
+  resetSteps();
+
+  // Preview
+  const previewOverlay = document.getElementById('previewOverlay');
+  document.getElementById('previewBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('previewBtn');
+    const original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Loading…';
+    try {
+      const res = await fetch('/admin/api/blog/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: document.getElementById('rTitle').value,
+          category: document.getElementById('rCategory').value,
+          tags: document.getElementById('rTags').value.split(',').map((t) => t.trim()).filter(Boolean),
+          contentMarkdown: document.getElementById('rContent').value,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data.error || 'Could not render a preview.');
+      document.getElementById('previewContent').innerHTML = data.html;
+      previewOverlay.style.display = 'flex';
+    } catch (err) {
+      genError.textContent = err.message; genError.style.display = '';
+    } finally { btn.disabled = false; btn.textContent = original; }
+  });
+  document.getElementById('previewCloseBtn').addEventListener('click', () => { previewOverlay.style.display = 'none'; });
+  previewOverlay.addEventListener('click', (e) => { if (e.target === previewOverlay) previewOverlay.style.display = 'none'; });
+
+  function markdownToPlainText(md) {
+    let text = md;
+    text = text.replace(/```[^\n]*\n([\s\S]*?)```/g, (_m, code) => code);
+    text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+    text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    text = text.replace(/^#{1,6}\s+/gm, '');
+    text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
+    text = text.replace(/(\*|_)(.*?)\1/g, '$2');
+    text = text.replace(/`([^`]*)`/g, '$1');
+    text = text.replace(/\n{3,}/g, '\n\n');
+    return text.trim();
+  }
+  function wireCopyAndOpen(btnId, url, label) {
+    document.getElementById(btnId).addEventListener('click', async () => {
+      const btn = document.getElementById(btnId);
+      const original = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(markdownToPlainText(document.getElementById('rContent').value));
+        btn.textContent = `Copied — opening ${label}…`;
+        window.open(url, '_blank', 'noopener');
+      } catch { btn.textContent = 'Could not copy'; }
+      setTimeout(() => { btn.textContent = original; }, 2000);
+    });
+  }
+  wireCopyAndOpen('copyAiCheckBtn', 'https://www.zerogpt.com/', 'ZeroGPT');
+  wireCopyAndOpen('copyJustDoneBtn', 'https://justdone.com/ai-detector', 'JustDone');
+
+  function setRerunStatus(message, isError) {
+    const box = document.getElementById('rerunStatus');
+    box.textContent = message;
+    box.style.color = isError ? '#F87171' : '';
+    box.style.display = message ? '' : 'none';
+  }
+  async function runRerunAction(btn, url, payload, onSuccess) {
+    const original = btn.textContent;
+    document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #applyInstructionBtn').forEach((b) => { b.disabled = true; });
+    btn.textContent = 'Working…';
+    setRerunStatus('', false);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data.error || 'Request failed.');
+      onSuccess(data);
+      renderReport();
+      applyPublishGate();
+      updateWordCount();
+    } catch (err) {
+      setRerunStatus(err.message || 'That re-run failed.', true);
+    } finally {
+      document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #applyInstructionBtn').forEach((b) => { b.disabled = false; });
+      btn.textContent = original;
+    }
+  }
+
+  document.getElementById('reFactCheckBtn').addEventListener('click', () => {
+    runRerunAction(document.getElementById('reFactCheckBtn'), '/admin/api/blog/factcheck-only', {
+      contentMarkdown: document.getElementById('rContent').value, provider: document.getElementById('f_provider').value,
+    }, (data) => {
+      document.getElementById('rContent').value = data.contentMarkdown;
+      pipeline.factCheck = data.factCheck;
+      setRerunStatus(`Fact check done — ${data.factCheck.issues.length} issue(s), ${data.factCheck.blockers.length} critical blocker(s).`, data.factCheck.blockers.length > 0);
+    });
+  });
+  document.getElementById('reHumanizeBtn').addEventListener('click', () => {
+    runRerunAction(document.getElementById('reHumanizeBtn'), '/admin/api/blog/humanize-only', {
+      title: document.getElementById('rTitle').value.trim(), contentMarkdown: document.getElementById('rContent').value,
+      provider: document.getElementById('f_provider').value,
+    }, (data) => {
+      document.getElementById('rContent').value = data.contentMarkdown;
+      pipeline.aiPatternCheck = data.aiPatternCheck;
+      setRerunStatus(`Humanize done (${data.passes} pass${data.passes > 1 ? 'es' : ''}) — AI-pattern score: ${data.aiPatternCheck.score}/100.`, data.aiPatternCheck.score < 90);
+    });
+  });
+  document.getElementById('reSeoBtn').addEventListener('click', () => {
+    runRerunAction(document.getElementById('reSeoBtn'), '/admin/api/blog/seo-optimize-only', {
+      title: document.getElementById('rTitle').value.trim(), contentMarkdown: document.getElementById('rContent').value,
+      category: document.getElementById('rCategory').value, focusKeyword: document.getElementById('f_focus').value.trim() || undefined,
+      provider: document.getElementById('f_provider').value, lang: document.getElementById('f_lang').value,
+    }, (data) => {
+      document.getElementById('rContent').value = data.contentMarkdown;
+      document.getElementById('rSeoTitle').value = data.seoTitle;
+      document.getElementById('rSeoDescription').value = data.seoDescription;
+      document.getElementById('rKeywords').value = (data.keywords || []).join(', ');
+      pipeline.seoReport = data.seoReport; pipeline.seoScore = data.seoScore;
+      setRerunStatus(`SEO done — ${data.internalLinksInserted.length} internal link(s) inserted.`, false);
+    });
+  });
+  document.getElementById('applyInstructionBtn').addEventListener('click', () => {
+    const instruction = document.getElementById('customInstructionText').value.trim();
+    if (!instruction) { setRerunStatus('Type an instruction first.', true); return; }
+    runRerunAction(document.getElementById('applyInstructionBtn'), '/admin/api/blog/apply-instruction', {
+      title: document.getElementById('rTitle').value.trim(), contentMarkdown: document.getElementById('rContent').value,
+      instruction, provider: document.getElementById('f_provider').value,
+    }, (data) => {
+      document.getElementById('rContent').value = data.contentMarkdown;
+      setRerunStatus('Instruction applied — review before saving.', false);
+    });
+  });
+
+  function renderReport() {
+    const box = document.getElementById('reportBox');
+    const rows = [];
+    if (pipeline.duplicateCheck) rows.push(`<div><b>Duplicate check:</b> ${esc(pipeline.duplicateCheck.verdict)}</div>`);
+    if (pipeline.originality) rows.push(`<div><b>Originality:</b> ${pipeline.originality.isCommodity ? `FLAGGED — ${esc(pipeline.originality.reason)}` : 'OK'}</div>`);
+    if (pipeline.factCheck) rows.push(`<div><b>Fact check:</b> ${pipeline.factCheck.issues.length} issue(s), ${pipeline.factCheck.blockers.length} critical</div>`);
+    if (pipeline.similarity) rows.push(`<div><b>Similarity:</b> ${esc(pipeline.similarity.status)}</div>`);
+    if (pipeline.aiPatternCheck) rows.push(`<div><b>AI-pattern score:</b> ${pipeline.aiPatternCheck.score}/100${pipeline.aiPatternCheck.flags.length ? ` — ${pipeline.aiPatternCheck.flags.map(esc).join('; ')}` : ''}</div>`);
+    if (pipeline.seoScore) rows.push(`<div><b>SEO score:</b> ${pipeline.seoScore.score}/100${pipeline.seoScore.flags.length ? ` — ${pipeline.seoScore.flags.map(esc).join('; ')}` : ''}</div>`);
+    if (pipeline.editorialReview) rows.push(`<div><b>Editorial gate:</b> ${esc(pipeline.editorialReview.verdict)}${pipeline.editorialReview.blockers.length ? ` — ${pipeline.editorialReview.blockers.map(esc).join('; ')}` : ''}</div>`);
+    box.innerHTML = rows.join('') || '<span class="text-secondary">Nothing to report yet.</span>';
+  }
+  document.getElementById('reportToggle').addEventListener('click', () => {
+    const box = document.getElementById('reportBox');
+    const show = box.style.display === 'none';
+    box.style.display = show ? '' : 'none';
+    document.getElementById('reportToggle').textContent = show ? 'Hide Pipeline Report' : 'Show Pipeline Report';
+  });
+
+  function applyPublishGate() {
+    const gate = document.getElementById('publishGate');
+    const gateText = document.getElementById('publishGateText');
+    const gateCheck = document.getElementById('publishGateCheck');
+    const publishBtn = document.getElementById('publishBtn');
+    const factBlockers = pipeline.factCheck?.blockers || [];
+    const editorial = pipeline.editorialReview || { verdict: 'PASS', blockers: [] };
+    const isCommodity = pipeline.originality?.isCommodity || false;
+    const needsGate = editorial.verdict === 'FAIL' || factBlockers.length > 0 || isCommodity;
+    if (!needsGate) { gate.style.display = 'none'; publishBtn.disabled = false; return; }
+    gate.style.display = '';
+    const issues = [
+      ...(isCommodity ? [`Flagged as commodity/generic: ${pipeline.originality.reason}`] : []),
+      ...factBlockers.map((b) => b.problem),
+      ...editorial.blockers,
+    ];
+    gateText.innerHTML = `This article has flagged issue(s):<ul class="mb-0">${issues.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+    publishBtn.disabled = !gateCheck.checked;
+    gateCheck.onchange = () => { publishBtn.disabled = !gateCheck.checked; };
+  }
+
+  const saveError = document.getElementById('saveError');
+  async function saveResult(status) {
+    saveError.style.display = 'none';
+    const btn = status === 'published' ? document.getElementById('publishBtn') : document.getElementById('saveDraftBtn');
+    const original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const res = await fetch('/admin/api/blog/save-pipeline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: slug || slugify(document.getElementById('rTitle').value),
+          lang: document.getElementById('f_lang').value,
+          title: document.getElementById('rTitle').value.trim(),
+          excerpt: document.getElementById('rSeoDescription').value.trim() || document.getElementById('rExcerpt').value.trim(),
+          category: document.getElementById('rCategory').value,
+          tags: document.getElementById('rTags').value.split(',').map((t) => t.trim()).filter(Boolean),
+          bodyMarkdown: document.getElementById('rContent').value,
+          status,
+          research: pipeline.research, duplicateCheck: pipeline.duplicateCheck, factCheck: pipeline.factCheck,
+          seoReport: pipeline.seoReport, aiSearchReport: pipeline.aiSearchReport, editorialReview: pipeline.editorialReview,
+          aiPatternCheck: pipeline.aiPatternCheck, similarity: pipeline.similarity,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data.error || 'Save failed.');
+      window.location.href = `/admin/blog/${data.id}?saved=1`;
+    } catch (err) {
+      saveError.textContent = err.message; saveError.style.display = '';
+      btn.disabled = false; btn.textContent = original;
+    }
+  }
+  function slugify(title) {
+    return title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+  }
+  document.getElementById('saveDraftBtn').addEventListener('click', () => saveResult('draft'));
+  document.getElementById('publishBtn').addEventListener('click', () => saveResult('published'));
+</script>

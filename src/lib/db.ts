@@ -31,6 +31,22 @@ export interface Article {
   source: 'ai' | 'manual';
   created_at: string;
   updated_at: string;
+  // Pipeline audit trail (nullable — populated only by the in-admin AI pipeline, see
+  // lib/blogPipeline.ts; a manual edit or pre-pipeline article leaves these null).
+  research_json?: unknown;
+  duplicate_check_json?: unknown;
+  fact_check_json?: unknown;
+  seo_report_json?: unknown;
+  ai_search_report_json?: unknown;
+  editorial_review_json?: { verdict: 'PASS' | 'FAIL'; blockers: string[] } | null;
+  ai_pattern_check_json?: { score: number; flags: string[] } | null;
+  similarity_json?: unknown;
+  internal_links_json?: unknown;
+  estimated_cost_usd?: number | null;
+  image_prompt?: string | null;
+  image_alt?: string | null;
+  image_caption?: string | null;
+  image_status?: string | null;
 }
 
 export interface Topic {

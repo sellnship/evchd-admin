@@ -2,10 +2,8 @@
 export const prerender = false;
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { sql, type Topic } from '../../../lib/db';
-import { actionsUrl } from '../../../lib/github';
 import { getActiveProvider, getConfiguredProviders } from '../../../lib/llm';
 import { getCategories } from '../../../lib/categories';
-import { env } from '../../../lib/env';
 
 const topics = (await sql()`
   SELECT t.*, a.id AS article_id
@@ -15,8 +13,6 @@ const topics = (await sql()`
 
 const ok = Astro.url.searchParams.get('ok');
 const err = Astro.url.searchParams.get('err');
-let ghUrl = '#';
-try { ghUrl = actionsUrl(); } catch { /* GITHUB_REPO not configured yet */ }
 
 // LLM dropdown: every provider with a key, best-ranked first; preselect the
 // active one (which itself falls back to the best configured provider).
@@ -24,9 +20,8 @@ const configured = await getConfiguredProviders();
 const activeProvider = await getActiveProvider();
 const llmReady = configured.length > 0;
 const categories = await getCategories();
-const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the PAT
 ---
-<AdminLayout title="AI Article Generator" active="generator" sub="Queue a topic → the engine drafts EN + HI with all quality gates">
+<AdminLayout title="AI Article Generator" active="generator" sub="Queue a topic → draft it quickly or run the full AI pipeline, no GitHub involved">
   {ok && <div class="alert alert-success py-2 small">{decodeURIComponent(ok)}</div>}
   {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
 
@@ -86,7 +81,9 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
         </form>
         <div class="small text-secondary mt-2">
           💡 Suggest Topics checks Google Trends (India) + your existing content, then fills the form
-          — or write your own. Same engine gates as the weekly cron; output lands as a <b>draft</b> for review.
+          — or write your own. "⚡ Draft with AI" is a quick no-gate draft; "✨ AI Pipeline" runs the
+          full research/dedupe/originality/fact-check/SEO/editorial pipeline. Either way, output lands
+          as a <b>draft</b> for review.
         </div>
       </div>
     </div>
@@ -95,7 +92,6 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
       <div class="card p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h2 class="h6 fw-bold mb-0">Topics</h2>
-          <a class="btn btn-sm btn-outline-light-subtle" href={ghUrl} target="_blank" rel="noopener">View Actions runs 🡕</a>
         </div>
         {topics.length === 0 ? (
           <p class="text-secondary small mb-0">No topics yet — queue one on the left.</p>
@@ -128,13 +124,9 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
                             onclick="this.textContent='Writing… ~30s'; ">⚡ Draft with AI</button>
                         </form>
                       )}
-                      {t.status === 'pending' && t.lang === 'en' && engineReady && (
-                        <form method="post" action="/admin/api/topics/dispatch" style="display:inline" class="ms-1">
-                          <input type="hidden" name="slug" value={t.slug} />
-                          <button class="btn btn-sm btn-outline-light-subtle" type="submit"
-                            title="Full pipeline in GitHub Actions: all gates + hero images, EN+HI"
-                            onclick="return confirm('Run the full engine for this topic (EN + HI)?')">▶ Engine</button>
-                        </form>
+                      {t.status === 'pending' && (
+                        <a class="btn btn-sm btn-outline-light-subtle ms-1" href={`/admin/blog/ai?slug=${encodeURIComponent(t.slug)}&lang=${t.lang}`}
+                           title="Full pipeline in-admin: research, dedupe, originality check, draft, humanize, fact-check, SEO, editorial gate">✨ AI Pipeline</a>
                       )}
                       {t.status === 'drafted' && t.article_id && (
                         <a class="btn btn-sm btn-success" href={`/admin/blog/${t.article_id}`}>Review draft</a>
@@ -147,8 +139,8 @@ const engineReady = Boolean(env('GITHUB_TOKEN')); // "▶ Engine" path needs the
           </div>
         )}
         <div class="small text-secondary mt-2">
-          A run takes a few minutes (two model passes + two hero images). Refresh this page to see
-          status move from <b>pending</b> → <b>drafted</b>.
+          "✨ AI Pipeline" runs interactively in your browser (usually well under a minute); its
+          status here moves from <b>pending</b> → <b>drafted</b> once you save the result.
         </div>
       </div>
     </div>

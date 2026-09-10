@@ -63,6 +63,18 @@ if (!isNew && article.slug) {
 // has one that's no longer in the categories table.
 const categories = await getCategories();
 if (article.category && !categories.includes(article.category)) categories.unshift(article.category);
+
+// Pipeline audit trail (populated only by the AI pipeline, admin/blog/ai.astro -- a manually
+// created/edited article simply has these null). Advisory only: matches the same "flag, don't
+// block" gate the pipeline UI itself uses, since this page is also the one place a manual edit
+// with no pipeline data at all still needs to publish freely.
+const editorialReview = article.editorial_review_json as { verdict: 'PASS' | 'FAIL'; blockers: string[] } | null | undefined;
+const factCheck = article.fact_check_json as { blockers?: { problem: string }[] } | null | undefined;
+const editorialGateFails = editorialReview?.verdict === 'FAIL' || Boolean(factCheck?.blockers?.length);
+const hasPipelineReport = Boolean(
+  article.research_json || article.fact_check_json || article.seo_report_json ||
+  article.editorial_review_json || article.ai_pattern_check_json || article.similarity_json,
+);
 ---
 <AdminLayout title={isNew ? 'New Article' : `Edit: ${article.title}`} active="blog" sub={isNew ? 'Create a blog article' : `/${article.slug} (${article.lang})`}>
   {saved && <div class="alert alert-success py-2 small">Saved.</div>}
@@ -137,10 +149,15 @@ if (article.category && !categories.includes(article.category)) categories.unshi
             Current: <span class={`badge status-${article.status}`}>{article.status}</span>
             {article.source === 'ai' && <span class="badge lang-en ms-1">AI draft</span>}
           </p>
+          {editorialGateFails && (
+            <div class="alert alert-warning py-2 small mb-2">
+              This article's AI pipeline flagged issue(s) before publishing — see Pipeline Report below.
+            </div>
+          )}
           <button class="btn btn-accent w-100 mb-2" type="submit" name="action" value="save">💾 Save</button>
           {!isNew && article.status === 'draft' && (
             <button class="btn btn-success w-100 mb-2" type="submit" name="action" value="publish"
-              onclick="return confirm('Publish this article and rebuild the website?')">🚀 Save &amp; Publish</button>
+              onclick={`return confirm(${editorialGateFails ? "'This article has flagged issues (see Pipeline Report) — publish anyway?'" : "'Publish this article and rebuild the website?'"})`}>🚀 Save &amp; Publish</button>
           )}
           {!isNew && article.status === 'published' && (
             <button class="btn btn-outline-light-subtle w-100 mb-2" type="submit" name="action" value="unpublish"
@@ -186,6 +203,39 @@ if (article.category && !categories.includes(article.category)) categories.unshi
             )}
           </div>
         </div>
+
+        {!isNew && hasPipelineReport && (
+          <div class="card p-3 mb-3">
+            <h2 class="h6 fw-bold">Pipeline Report</h2>
+            <div class="small">
+              {article.duplicate_check_json && (
+                <div class="mb-1"><b>Duplicate check:</b> {(article.duplicate_check_json as any).verdict}</div>
+              )}
+              {factCheck && (
+                <div class="mb-1"><b>Fact check:</b> {(article.fact_check_json as any).issues?.length ?? 0} issue(s), {factCheck.blockers?.length ?? 0} critical</div>
+              )}
+              {article.similarity_json && (
+                <div class="mb-1"><b>Similarity:</b> {(article.similarity_json as any).status}</div>
+              )}
+              {article.ai_pattern_check_json && (
+                <div class="mb-1"><b>AI-pattern score:</b> {(article.ai_pattern_check_json as any).score}/100</div>
+              )}
+              {article.seo_report_json && (
+                <div class="mb-1"><b>SEO score:</b> {(article.seo_report_json as any).score ?? '—'}</div>
+              )}
+              {editorialReview && (
+                <div class="mb-1">
+                  <b>Editorial gate:</b> <span class={`badge ${editorialReview.verdict === 'PASS' ? 'status-published' : 'status-pending'}`}>{editorialReview.verdict}</span>
+                  {editorialReview.blockers?.length > 0 && (
+                    <ul class="mb-0 mt-1">
+                      {editorialReview.blockers.map((b) => <li>{b}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {!isNew && (
           <div class="card p-3">

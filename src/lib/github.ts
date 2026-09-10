@@ -1,6 +1,11 @@
-// GitHub REST helpers — Site Pages editing (contents API) and dispatching the
-// blog draft workflow. Env: GITHUB_TOKEN (fine-grained PAT: this repo only,
-// Contents read/write + Actions read/write), GITHUB_REPO ("owner/name").
+// GitHub REST helpers — Site Pages editing (contents API) and read-only fetches
+// of the main site's local-facts.json/models.json (grounding data for the AI
+// blog pipeline, see lib/blogPipeline.ts). Env: GITHUB_TOKEN (fine-grained
+// PAT: this repo only, Contents read/write), GITHUB_REPO ("owner/name").
+//
+// Article generation no longer dispatches a GitHub Actions workflow (removed
+// dispatchBlogWorkflow/actionsUrl -- see lib/blogPipeline.ts and
+// admin/blog/ai.astro, which run the full pipeline in-process instead).
 import { env } from './env';
 
 const API = 'https://api.github.com';
@@ -53,18 +58,4 @@ export async function putFile(path: string, content: string, sha: string, messag
     }),
   });
   if (!res.ok) throw new Error(`GitHub commit ${path}: HTTP ${res.status} ${await res.text()}`);
-}
-
-/** Fire the blog draft workflow (workflow_dispatch). Returns void — GitHub
- *  responds 204 with no run id; run status is tracked via the topics table. */
-export async function dispatchBlogWorkflow(topicSlug: string): Promise<void> {
-  const res = await gh(`/repos/${repo()}/actions/workflows/publish-blog.yml/dispatches`, {
-    method: 'POST',
-    body: JSON.stringify({ ref: 'main', inputs: { topic_slug: topicSlug } }),
-  });
-  if (res.status !== 204) throw new Error(`workflow_dispatch failed: HTTP ${res.status} ${await res.text()}`);
-}
-
-export function actionsUrl(): string {
-  return `https://github.com/${repo()}/actions/workflows/publish-blog.yml`;
 }
