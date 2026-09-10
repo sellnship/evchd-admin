@@ -181,7 +181,12 @@ const hasPipelineReport = Boolean(
                 <span class="small text-secondary align-self-center">Fact-check &amp; SEO check need an LLM key — <a href="/admin/settings">add one in Settings</a>.</span>
               )}
             </div>
+            <div class="progress mt-2 d-none" style="height: 6px;" id="toolsProgressWrap">
+              <div class="progress-bar" id="toolsProgressBar" role="progressbar" style="width: 0%"></div>
+            </div>
             <div class="small mt-1" id="contentToolsStatus"></div>
+            <div class="mt-2" id="factCheckResults" style="display:none;"></div>
+            <div class="mt-2" id="seoCheckResults" style="display:none;"></div>
           </div>
 
           {!isNew && imagesReady && (
@@ -394,10 +399,103 @@ const hasPipelineReport = Boolean(
       const text = await res.text();
       try { return JSON.parse(text); } catch { throw new Error(`Server error (status ${res.status}): ${(text || 'empty response').slice(0, 200)}`); }
     }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
     const toolsStatusEl = document.getElementById('contentToolsStatus');
     function setToolsStatus(message, isError) {
       toolsStatusEl.textContent = message;
       toolsStatusEl.style.color = isError ? '#F87171' : '';
+    }
+
+    // Same fake-but-honest progress bar as the hero/body image generators
+    // (blog/[id].astro doesn't always have the image tools' script loaded, so
+    // this is a separate copy) -- fact-check/SEO-check are single LLM calls
+    // with no incremental status to report, so this eases toward ~90% over a
+    // rough estimate and completes when the request actually resolves.
+    const toolsProgressBar = document.getElementById('toolsProgressBar');
+    const toolsProgressWrap = document.getElementById('toolsProgressWrap');
+    function startToolsProgress(estimateSec) {
+      toolsProgressWrap.classList.remove('d-none');
+      toolsProgressBar.style.width = '0%';
+      const start = Date.now();
+      const totalMs = Math.max(3000, estimateSec * 1000);
+      const timer = setInterval(() => {
+        toolsProgressBar.style.width = Math.min(90, (90 * (Date.now() - start)) / totalMs) + '%';
+      }, 200);
+      return () => {
+        clearInterval(timer);
+        toolsProgressBar.style.width = '100%';
+        setTimeout(() => toolsProgressWrap.classList.add('d-none'), 400);
+      };
+    }
+
+    // Jump the editor's cursor/selection to a piece of text (fact-check's
+    // "claim" is the exact wording from the article, so this is a real
+    // "where" -- not just a description of the problem).
+    function findInBody(text) {
+      if (!text) return false;
+      const idx = bodyEditorEl.value.indexOf(text);
+      if (idx === -1) return false;
+      bodyEditorEl.focus();
+      bodyEditorEl.setSelectionRange(idx, idx + text.length);
+      return true;
+    }
+
+    function factCheckGuidance(issue) {
+      return issue.severity === 'critical'
+        ? 'Critical -- already corrected in the article body above. Re-read that section to make sure the fix reads naturally, then 💾 Save.'
+        : 'Warning only -- not auto-fixed. Edit the claim above if you want to address it, or leave it if it\'s fine as written.';
+    }
+    function renderFactCheckResults(factCheck) {
+      const box = document.getElementById('factCheckResults');
+      if (!factCheck.issues.length) {
+        box.style.display = '';
+        box.innerHTML = '<div class="alert alert-success py-2 small mb-0">No factual issues found against the verified local facts/models data.</div>';
+        return;
+      }
+      box.style.display = '';
+      box.innerHTML = factCheck.issues.map((issue, i) => `
+        <div class="card p-2 mb-2">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <span class="badge ${issue.severity === 'critical' ? 'bg-danger' : 'bg-warning text-dark'}">${esc(issue.severity)}</span>
+            ${issue.claim ? `<button type="button" class="btn btn-sm btn-outline-light-subtle flex-shrink-0" data-find-claim="${i}">📍 Find in article</button>` : ''}
+          </div>
+          ${issue.claim ? `<div class="small mt-1"><b>Claim:</b> "<span class="mono">${esc(issue.claim)}</span>"</div>` : ''}
+          <div class="small mt-1"><b>Problem:</b> ${esc(issue.problem)}</div>
+          <div class="small text-secondary mt-1">${esc(factCheckGuidance(issue))}</div>
+        </div>`).join('');
+      box.querySelectorAll('[data-find-claim]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const issue = factCheck.issues[Number(btn.dataset.findClaim)];
+          if (!findInBody(issue.claim)) { btn.textContent = 'Not found verbatim (may have been rephrased)'; btn.disabled = true; }
+        });
+      });
+    }
+
+    function seoFlagGuidance(flag) {
+      const f = flag.toLowerCase();
+      if (f.includes('seo title')) return 'Fix: edit the Title field above (aim for 30-65 characters).';
+      if (f.includes('meta description')) return 'Fix: edit the Description field above (aim for 110-165 characters) -- SEO Check already filled in a suggestion if one was missing.';
+      if (f.includes('subheading')) return 'Fix: add a few ## or ### headings in the Body to break up the article.';
+      if (f.includes('opening paragraph')) return 'Fix: mention the focus keyword in the article\'s first paragraph.';
+      if (f.includes('internal link')) return 'Fix: add a markdown link to another EV Chandigarh page in the body -- SEO Check inserts these automatically when it finds a good match, or add one by hand.';
+      if (f.includes('alt text')) return 'Fix: set alt text when generating/uploading the hero image.';
+      if (f.includes('short')) return 'Fix: expand the article -- thin content ranks less reliably.';
+      return 'Review and adjust the article body or the fields above.';
+    }
+    function renderSeoCheckResults(seoScore) {
+      const box = document.getElementById('seoCheckResults');
+      box.style.display = '';
+      if (!seoScore?.flags?.length) {
+        box.innerHTML = '<div class="alert alert-success py-2 small mb-0">No SEO issues found.</div>';
+        return;
+      }
+      box.innerHTML = seoScore.flags.map((flag) => `
+        <div class="card p-2 mb-2">
+          <div class="small"><b>Issue:</b> ${esc(flag)}</div>
+          <div class="small text-secondary mt-1">${esc(seoFlagGuidance(flag))}</div>
+        </div>`).join('');
     }
 
     // Preview — same render endpoint as the AI Generator page, just fed from
@@ -438,7 +536,9 @@ const hasPipelineReport = Boolean(
       factCheckBtn.addEventListener('click', async () => {
         const original = factCheckBtn.textContent;
         factCheckBtn.disabled = true; factCheckBtn.textContent = 'Checking…';
-        setToolsStatus('', false);
+        setToolsStatus('Fact-checking against verified local facts/models data… (~15-20s)', false);
+        document.getElementById('factCheckResults').style.display = 'none';
+        const finishProgress = startToolsProgress(18);
         try {
           const res = await fetch('/admin/api/blog/factcheck-only', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -449,13 +549,15 @@ const hasPipelineReport = Boolean(
           bodyEditorEl.value = data.contentMarkdown;
           updateBodyWordCount();
           document.getElementById('factCheckJsonInput').value = JSON.stringify(data.factCheck);
+          renderFactCheckResults(data.factCheck);
           setToolsStatus(
-            `Fact check: ${data.factCheck.issues.length} issue(s), ${data.factCheck.blockers.length} critical blocker(s) — 💾 Save to keep this in the Pipeline Report.`,
+            `Fact check: ${data.factCheck.issues.length} issue(s), ${data.factCheck.blockers.length} critical blocker(s) — see details below. 💾 Save to keep this in the Pipeline Report.`,
             data.factCheck.blockers.length > 0,
           );
         } catch (err) {
-          setToolsStatus(err.message, true);
+          setToolsStatus(`Fact check failed: ${err.message} — try again, or check your LLM key in Settings.`, true);
         } finally {
+          finishProgress();
           factCheckBtn.disabled = false; factCheckBtn.textContent = original;
         }
       });
@@ -465,7 +567,9 @@ const hasPipelineReport = Boolean(
       seoCheckBtn.addEventListener('click', async () => {
         const original = seoCheckBtn.textContent;
         seoCheckBtn.disabled = true; seoCheckBtn.textContent = 'Checking…';
-        setToolsStatus('', false);
+        setToolsStatus('Scoring SEO and looking for internal-link opportunities… (~15-20s)', false);
+        document.getElementById('seoCheckResults').style.display = 'none';
+        const finishProgress = startToolsProgress(18);
         try {
           const res = await fetch('/admin/api/blog/seo-optimize-only', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -483,16 +587,18 @@ const hasPipelineReport = Boolean(
           if (data.seoDescription) descEl.value = data.seoDescription;
           document.getElementById('seoReportJsonInput').value =
             JSON.stringify({ ...data.seoReport, score: data.seoScore?.score, flags: data.seoScore?.flags });
+          renderSeoCheckResults(data.seoScore);
           const linksNote = data.internalLinksInserted?.length
             ? ` — ${data.internalLinksInserted.length} internal link(s) inserted`
             : '';
           setToolsStatus(
-            `SEO score: ${data.seoScore?.score ?? '—'}/100${linksNote} — 💾 Save to keep this in the Pipeline Report.`,
+            `SEO score: ${data.seoScore?.score ?? '—'}/100${linksNote} — see details below. 💾 Save to keep this in the Pipeline Report.`,
             (data.seoScore?.score ?? 100) < 70,
           );
         } catch (err) {
-          setToolsStatus(err.message, true);
+          setToolsStatus(`SEO check failed: ${err.message} — try again, or check your LLM key in Settings.`, true);
         } finally {
+          finishProgress();
           seoCheckBtn.disabled = false; seoCheckBtn.textContent = original;
         }
       });
