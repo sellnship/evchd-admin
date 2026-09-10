@@ -70,10 +70,11 @@ function stepLabel(s: string): string {
           <div class="col-4">
             <label class="form-label small">Length</label>
             <select class="form-select" id="f_length">
-              <option value="short">Short (~500-700w)</option>
+              <option value="short">Short (~700-900w)</option>
               <option value="medium" selected>Medium (~900-1300w)</option>
               <option value="long">Long (~1600-2200w)</option>
             </select>
+            <div class="text-secondary" style="font-size:.72rem;">700-word minimum enforced regardless of tier.</div>
           </div>
           <div class="col-4">
             <label class="form-label small">Category</label>
@@ -138,8 +139,11 @@ function stepLabel(s: string): string {
           <button type="button" id="reFactCheckBtn" class="btn btn-sm btn-outline-light-subtle">Re-run Fact Check</button>
           <button type="button" id="reHumanizeBtn" class="btn btn-sm btn-outline-light-subtle">Re-run Humanize</button>
           <button type="button" id="reSeoBtn" class="btn btn-sm btn-outline-light-subtle">Re-run SEO</button>
+          <button type="button" id="reLinksBtn" class="btn btn-sm btn-outline-light-subtle">🔗 Add Internal Links</button>
+          <button type="button" id="fixIssuesBtn" class="btn btn-sm btn-warning">🔧 Fix Issues &amp; Re-check</button>
         </div>
         <div id="rerunStatus" class="small mt-1" style="display:none;"></div>
+        <div id="linksSkippedBox" class="small mt-2" style="display:none;"></div>
 
         <div class="mt-3">
           <label class="form-label small">Custom instruction <span class="text-secondary">(e.g. "add a paragraph about X")</span></label>
@@ -235,6 +239,12 @@ function stepLabel(s: string): string {
   function resetSteps() {
     ['research', 'dedupe', 'originality', 'draft', 'humanize', 'factcheck', 'seo', 'aisearch', 'similarity', 'editorial'].forEach((s) => setStep(s, '', stepDefaultLabel(s)));
   }
+  // "Fix Issues" only re-runs the review half of the pipeline (factcheck/seo/aisearch/similarity/
+  // dedupe/editorial) -- resetting the research/originality/draft/humanize steps too would visually
+  // suggest they're restarting when they aren't.
+  function resetReviewSteps() {
+    ['factcheck', 'seo', 'aisearch', 'similarity', 'dedupe', 'editorial'].forEach((s) => setStep(s, '', stepDefaultLabel(s)));
+  }
 
   async function streamPipeline(url, payload, onResult) {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -297,6 +307,7 @@ function stepLabel(s: string): string {
 
       pipeline = { ...pipeline, ...reviewResult };
       fillResult({ ...draftResult, ...reviewResult });
+      renderLinksSkipped(reviewResult.internalLinksSkipped);
       renderReport();
       applyPublishGate();
     } catch (err) {
@@ -405,7 +416,7 @@ function stepLabel(s: string): string {
   }
   async function runRerunAction(btn, url, payload, onSuccess) {
     const original = btn.textContent;
-    document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #applyInstructionBtn').forEach((b) => { b.disabled = true; });
+    document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #reLinksBtn, #fixIssuesBtn, #applyInstructionBtn').forEach((b) => { b.disabled = true; });
     btn.textContent = 'Working…';
     setRerunStatus('', false);
     try {
@@ -454,8 +465,93 @@ function stepLabel(s: string): string {
       document.getElementById('rSeoDescription').value = data.seoDescription;
       document.getElementById('rKeywords').value = (data.keywords || []).join(', ');
       pipeline.seoReport = data.seoReport; pipeline.seoScore = data.seoScore;
-      setRerunStatus(`SEO done — ${data.internalLinksInserted.length} internal link(s) inserted.`, false);
+      renderLinksSkipped(data.internalLinksSkipped);
+      setRerunStatus(`SEO done — ${data.internalLinksInserted.length} internal link(s) inserted${data.internalLinksSkipped?.length ? `, ${data.internalLinksSkipped.length} suggested but not found verbatim (see below)` : ''}.`, false);
     });
+  });
+  document.getElementById('reLinksBtn').addEventListener('click', () => {
+    runRerunAction(document.getElementById('reLinksBtn'), '/admin/api/blog/internal-links-only', {
+      contentMarkdown: document.getElementById('rContent').value,
+      provider: document.getElementById('f_provider').value, lang: document.getElementById('f_lang').value,
+    }, (data) => {
+      document.getElementById('rContent').value = data.contentMarkdown;
+      renderLinksSkipped(data.internalLinksSkipped);
+      setRerunStatus(
+        data.note || `${data.internalLinksInserted.length} internal link(s) inserted${data.internalLinksSkipped?.length ? `, ${data.internalLinksSkipped.length} suggested but not found verbatim (see below)` : ''}.`,
+        false,
+      );
+    });
+  });
+
+  // Suggestions applyInternalLinks() couldn't auto-insert (anchor text not found verbatim in the
+  // body) -- shown with a manual "Insert" action so a genuinely missing link isn't just silently
+  // dropped. Inserts as a plain markdown link at the current cursor position in the article
+  // textarea (falls back to the end if nothing is focused there).
+  function renderLinksSkipped(skipped) {
+    const box = document.getElementById('linksSkippedBox');
+    if (!skipped || !skipped.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = '';
+    box.innerHTML = `<div class="text-secondary mb-1">Suggested but not auto-inserted (anchor text not found verbatim):</div>` +
+      skipped.map((s, i) => `
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span>[${esc(s.anchorText)}](${esc(s.url)})${s.reason ? ` — <span class="text-secondary">${esc(s.reason)}</span>` : ''}</span>
+          <button type="button" class="btn btn-sm btn-outline-light-subtle flex-shrink-0" data-insert-link="${i}">Insert</button>
+        </div>`).join('');
+    box.querySelectorAll('[data-insert-link]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const s = skipped[Number(btn.dataset.insertLink)];
+        const textarea = document.getElementById('rContent');
+        const pos = textarea.selectionStart ?? textarea.value.length;
+        const md = `[${s.anchorText}](${s.url})`;
+        textarea.value = textarea.value.slice(0, pos) + md + textarea.value.slice(pos);
+        textarea.focus();
+        textarea.setSelectionRange(pos + md.length, pos + md.length);
+        updateWordCount();
+        btn.disabled = true;
+        btn.textContent = 'Inserted';
+      });
+    });
+  }
+
+  // "Fix Issues & Re-check" -- re-runs the FULL review stage (fact-check -> seo -> ai-search-opt
+  // -> similarity -> dedupe -> editorial-review) against the current, possibly hand-edited
+  // content. Deliberately the whole stage rather than chaining individual re-run buttons: each
+  // stage's output feeds the next (fact-check's fixes need re-scoring by SEO/similarity, a new
+  // AI-pattern score needs a fresh editorial verdict), so re-running everything together avoids
+  // leaving one stage's report stale relative to a change made by another.
+  document.getElementById('fixIssuesBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('fixIssuesBtn');
+    const original = btn.textContent;
+    document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #reLinksBtn, #fixIssuesBtn, #applyInstructionBtn').forEach((b) => { b.disabled = true; });
+    btn.textContent = 'Re-checking…';
+    setRerunStatus('', false);
+    resetReviewSteps();
+    try {
+      const provider = document.getElementById('f_provider').value;
+      const lang = document.getElementById('f_lang').value;
+      let reviewResult = null;
+      await streamPipeline('/admin/api/blog/review', {
+        title: document.getElementById('rTitle').value.trim(),
+        category: document.getElementById('rCategory').value,
+        contentMarkdown: document.getElementById('rContent').value,
+        research: pipeline.research,
+        focusKeyword: document.getElementById('f_focus').value.trim() || undefined,
+        provider, lang,
+        isCommodity: pipeline.originality?.isCommodity || false,
+      }, (r) => { reviewResult = r; });
+      if (!reviewResult) throw new Error('Re-check finished without a result.');
+      pipeline = { ...pipeline, ...reviewResult };
+      fillResult(reviewResult); // already covers contentMarkdown/seoTitle/seoDescription/keywords
+      renderLinksSkipped(reviewResult.internalLinksSkipped);
+      renderReport();
+      applyPublishGate();
+      setRerunStatus(`Re-checked — editorial gate: ${reviewResult.editorialReview.verdict}.`, reviewResult.editorialReview.verdict === 'FAIL');
+    } catch (err) {
+      setRerunStatus(err.message || 'Re-check failed.', true);
+    } finally {
+      document.querySelectorAll('#reFactCheckBtn, #reHumanizeBtn, #reSeoBtn, #reLinksBtn, #fixIssuesBtn, #applyInstructionBtn').forEach((b) => { b.disabled = false; });
+      btn.textContent = original;
+    }
   });
   document.getElementById('applyInstructionBtn').addEventListener('click', () => {
     const instruction = document.getElementById('customInstructionText').value.trim();

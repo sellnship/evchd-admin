@@ -89,12 +89,54 @@ export function checkAiPatterns(markdown: string): AiPatternResult {
   }
 
   // "not just X but also Y" / "it's not just X, it's Y" -- an overused parallel-structure tell.
+  // Matches both the comma form ("it's not just X, it's Y") and the punchier period form ("It's
+  // not just X. It's Y.") -- both are the same rhetorical crutch, just with different punctuation.
   const notJustButAlso = markdown.match(/\bnot\s+just\s+[^,.!?;]+?\s+but\s+also\b/gi) || [];
-  const itsNotJustItsPattern = markdown.match(/\bit'?s\s+not\s+just\s+[^,]+,\s+it'?s\b/gi) || [];
+  const itsNotJustItsPattern = markdown.match(/\bit'?s\s+not\s+just\s+[^,.!?]+?[,.]\s+it'?s\b/gi) || [];
   const parallelCount = notJustButAlso.length + itsNotJustItsPattern.length;
   if (parallelCount > 0) {
     deductions += Math.min(20, parallelCount * 10);
     flags.push(`${parallelCount} "not just X but also Y" / "it's not just X, it's Y" construction(s) -- state the point plainly instead`);
+  }
+
+  // A family of short-punchy contrast/reveal constructions, all variants of the same AI rhetorical
+  // tic: set up a denial or negative, then deliver the "real" point as a short follow-on clause or
+  // sentence. Individually rare enough in genuine human writing that even one occurrence is worth
+  // flagging (unlike, say, hedge words, which need density before they're a tell).
+  const contrastPatterns: [RegExp, string][] = [
+    [/\bit'?s\s+not\s+about\s+[^,.!?]+?,\s+it'?s\s+about\b/gi, "it's not about X, it's about Y"],
+    [/\bthat'?s\s+not\s+[^,.!?]+?[,.]\s+that'?s\b/gi, "that's not X, that's Y"],
+    [/\bnot\s+because\s+[^.!?]+?[.!?]\s+but\s+because\b/gi, 'not because X. But because Y'],
+    [/\bnot\s+by\s+[^,.!?]+?,\s+but\s+by\b/gi, 'not by doing X, but by doing Y'],
+    [/\band\s+the\s+\w+[^?]{0,40}\?\s+[A-Z]/gi, 'And the X? Y.'],
+    [/\bthe\s+(result|outcome)\?\s+[A-Z]/gi, '"The result?"/"The outcome?" rhetorical mini-question'],
+  ];
+  let contrastHits = 0;
+  const contrastLabels: string[] = [];
+  for (const [re, label] of contrastPatterns) {
+    const matches = markdown.match(re) || [];
+    if (matches.length) { contrastHits += matches.length; contrastLabels.push(label); }
+  }
+  if (contrastHits > 0) {
+    deductions += Math.min(20, contrastHits * 10);
+    flags.push(`${contrastHits} short contrast/reveal construction(s) (${contrastLabels.join(', ')}) -- state the point directly instead`);
+  }
+
+  // "No X. No Y. Just Z." -- a triple-negative-then-affirmative staccato pattern.
+  const noNoJust = markdown.match(/\bno\s+\w+(?:\s+\w+){0,3}\.\s+no\s+\w+(?:\s+\w+){0,3}\.\s+just\s+\w+/gi) || [];
+  if (noNoJust.length > 0) {
+    deductions += Math.min(15, noNoJust.length * 15);
+    flags.push(`${noNoJust.length} "No X. No Y. Just Z." staccato construction(s) -- write the point as one plain sentence instead`);
+  }
+
+  // Staccato fragment runs -- 3+ consecutive very short (<=3 word) sentence fragments used as a
+  // rhythmic flourish ("Focused. Aligned. Measurable." / "Fewer questions. Less confusion. Better
+  // engagement."). Genuine human writing rarely strings more than two such fragments in a row;
+  // bounded to 3+ specifically so an ordinary short sentence here and there isn't flagged.
+  const staccatoRuns = markdown.match(/(?:\b[A-Z][\w'-]*(?:\s+[\w'-]+){0,2}\.\s+){2,}\b[A-Z][\w'-]*(?:\s+[\w'-]+){0,2}\./g) || [];
+  if (staccatoRuns.length > 0) {
+    deductions += Math.min(15, staccatoRuns.length * 15);
+    flags.push(`${staccatoRuns.length} staccato run(s) of 3+ very short sentence fragments (e.g. "${staccatoRuns[0]!.trim().slice(0, 60)}") -- write as normal sentences instead`);
   }
 
   // Bullet-list ratio -- lines starting with -/* vs total non-heading lines.

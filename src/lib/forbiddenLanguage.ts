@@ -15,6 +15,33 @@ export const HARD_BAN_WORDS = [
   'cultivate', 'integral', 'implications', 'perspectives', 'holistic', 'discern', 'complexity',
   'recognize', 'adapt', 'promote', 'critique', 'comprehensive',
   'imperative', 'vital', 'nurture', 'fundamental', 'demystify', 'foray', 'transformative',
+  // Added from several user-supplied AI-detector frequency tables/word lists (ranked by how many
+  // times more often AI models use these vs. human writers) -- these were previously only
+  // requested via the humanize prompt's HUMANIZER_WORDS list (blogEditorialRules.ts), not
+  // actually scanned/enforced. Promoted here so a violation is caught even when the model ignores
+  // the prompt. Includes some fiction/narrative-flavored words (e.g. "ethereal", "crescendo")
+  // unlikely to ever appear in this site's factual EV-scooter content -- harmless to keep banned
+  // regardless, since they simply never match real articles here.
+  'cutting-edge', 'revolutionary', 'game-changing', 'innovative', 'furthermore', 'moreover',
+  'additionally', 'consequently', 'nevertheless', 'advent', 'akin', 'amidst', 'arduous',
+  'conversely', 'entails', 'entrenched', 'essential', 'glean', 'grasp', 'hinder', 'kaleidoscope',
+  'linchpin', 'manifold', 'plethora', 'preemptively', 'pronged', 'underpins', 'unparalleled',
+  'vast', 'utilize', 'streamline', 'seamlessly', 'seamless', 'scalable', 'subsequently',
+  'remarkable', 'context', 'insight', 'paradigm', 'framework', 'facet', 'dynamic', 'intricacies',
+  'iterative', 'confluence', 'nuance', 'underpinning', 'spectrum', 'trajectory', 'foundations',
+  'intrigue', 'elusive', 'orchestra', 'intricately', 'quintessential', 'symphony', 'canvas',
+  'labyrinth', 'ineffable', 'resonance', 'embodiment', 'crescendo', 'enigma', 'transcendent',
+  'ephemeral', 'resplendent', 'indomitable', 'unfathomable', 'monumental', 'ethereal',
+  'imperishable', 'unyielding', 'boundless', 'otherworldly', 'bioluminescent', 'luminescent',
+  'mosaic', 'woven', 'sculpted', 'traversed', 'guidelines', 'boundaries', 'inevitable',
+  'precision', 'surgical', 'arena', 'arsenal', 'bombard', 'bloated', 'boosts', 'breeze', 'buzz',
+  'cadence', 'capture', 'captivate', 'catapult', 'compelling', 'cornerstone', 'convey', 'craft',
+  'crafting', 'despair', 'diverge', 'drowning', 'embark', 'employ', 'engage', 'engaging',
+  'entrusting', 'fantastic', 'fluff', 'formidable', 'gaslights', 'hone', 'imaginative',
+  'incorporating', 'juggling', 'magic', 'marvelous', 'navigate', 'nimble', 'nugget', 'nutshell',
+  'raves', 'revolutionize', 'scrappy', 'sifting', 'skyrocket', 'stall', 'stellar',
+  'supercharge', 'surge', 'tackle', 'tightrope', 'trailblazer', 'turbocharge', 'uncover',
+  'unveil', 'wedge', 'whip', 'compelling', 'fast-paced',
 ] as const;
 
 export const HARD_BAN_PHRASES = [
@@ -50,6 +77,55 @@ export const HARD_BAN_PHRASES = [
   'may draw home buyers', 'raise concerns about potential disruptions',
   'beacon of', 'circle back', 'dive deep', 'navigating the challenges', 'navigating the complexities',
   'in short', 'in summary', 'cannot be overstated',
+  // Added from four user-supplied AI-detector frequency tables (ranked by how many times more
+  // often AI models use these vs. human writers) -- consolidated and deduplicated against the
+  // list above. A few entries too garbled/incoherent to be real phrases (apparent scraping/OCR
+  // artifacts like "a serf reminder", "despite the face") were left out entirely, since banning
+  // literal nonsense text matches nothing in real writing.
+  'left an indelible mark', 'significant role in shaping', 'broad implication', 'broad implications',
+  'endure a legacy', 'underscore the importance', 'underscore the need', 'navigate the complex',
+  'mark a turning point', 'hold a significant', 'a multi-faceted approach',
+  'potential risk associated', 'a profound implication', 'a significant implication',
+  'a unique blend', "couldn't help but wonder", 'framework for understanding',
+  'laid the groundwork', 'aim to explore', 'present a unique challenge', 'provide a comprehensive',
+  'shed light on', 'a diverse perspective', 'contribute to the understanding',
+  'particularly noteworthy', "in today's ever-evolving world", 'in essence', 'certainly,',
+  'harness the power of', 'navigate the complexities of', 'navigate the complexities',
+  'unlock the potential of', 'unlock the potential', 'it is worth mentioning that',
+  "it's worth noting", "it's important to note", 'seamlessly integrate',
+  'at the forefront of innovation', 'a game-changing solution', 'empowering users to',
+  'foster innovation', 'drive engagement', 'elevate your', 'empower individuals',
+  'resonate with audiences', "in today's digital age", 'it is important to understand',
+  'this is particularly true', 'one might argue that', 'it goes without saying',
+  'when it comes to', 'on the other hand', 'to summarize', 'that being said',
+  'with that in mind', 'in light of this',
+  // Second consolidation pass: several more user-supplied lists, including basic connectives
+  // ("for example", "therefore", "although", etc.) explicitly requested despite their generic,
+  // everyday use elsewhere in English -- accepted deliberately, not an oversight.
+  'along with', 'on the contrary', "in today's rapidly evolving market", 'at the core of',
+  'a myriad of', 'on a broader scale', 'in the context of', 'from a holistic perspective',
+  'taking into account', 'a dynamic interplay', 'evolving over time', 'intricacies involved',
+  'a pivotal role', 'underpinning principles', 'the spectrum of', 'transformative impact',
+  'little did they know', 'surgical focus', 'lethal purpose', 'silent entry', 'in fact', 'indeed',
+  'absolutely', 'clearly', 'first and foremost', 'finally', 'as a result', 'therefore',
+  'in other words', 'to put it simply', 'that is to say', 'to elaborate', 'for example',
+  'for instance', 'such as', 'to illustrate', 'although', 'even though', 'despite',
+  'while it may seem', 'all in all', 'imagine if', 'suppose that', 'what if',
+  'have you ever wondered', 'what would happen if', 'how can we', "isn't it true that",
+  "wouldn't you agree that", "isn't it obvious that", 'more importantly', 'even more',
+  'less significant but', 'the challenge is', 'the key issue is', 'the question remains',
+  "here's the kicker", 'in a sea of sameness', 'like a moth to a flame', 'in a world of',
+  'to sum up', 'brain dump', 'break the bank', 'chaos into clarity', 'comes to the rescue',
+  'digital world', 'elephant in the room', 'ever wondered', 'eye roll', 'fast paced world',
+  'falls flat', "grabs people's attention", 'hard truth', "here's the deal", "here's the truth",
+  'hits different', 'hits home', 'hits a wall', 'in a world', 'in the era of', "in today's era",
+  "in today's modern age", "in today's world", 'in the world of', 'is all about', 'it is like',
+  'lands well', 'mind blowing', 'miss the mark', 'moves the needle', 'perfect storm',
+  'powerful tool', 'quiet acceptance', 'real deal', 'roll your eyes', 'scroll stopper', 'sea of',
+  'secret sauce', 'secret weapon', 'saves the day', 'sneak peek', 'stay tuned',
+  'scream into the void', 'welcome to the world', 'continuous improvement',
+  'solution development', 'strategic alignment', 'operational excellence',
+  'organizational efficiency',
 ] as const;
 
 // Cliched AI-tell OPENING lines. Position-specific, unlike HARD_BAN_PHRASES above: these read as
@@ -132,8 +208,11 @@ export function scanForbiddenLanguage(markdown: string): ForbiddenHit[] {
   }
 
   for (const word of HARD_BAN_WORDS) {
-    // Matches common conjugations too (foster -> fostering/fosters/fostered).
-    const re = new RegExp(`\\b${word}(?:s|ed|ing)?\\b`, 'gi');
+    // Matches common variations too -- plurals, tense changes, and -er/-ity/-ful/-ly suffixes
+    // (foster -> fostering/fosters/fostered, capture -> capturer/capturing, formidable -> n/a but
+    // e.g. seamless -> seamlessly) -- per explicit request to catch "any variation" of a banned
+    // word, not just the original 's'/'ed'/'ing' set.
+    const re = new RegExp(`\\b${word}(?:s|es|ed|ing|er|ers|ity|ful|ly)?\\b`, 'gi');
     let match: RegExpExecArray | null;
     let count = 0;
     let firstIndex = -1;

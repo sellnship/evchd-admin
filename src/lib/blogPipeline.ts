@@ -22,8 +22,11 @@ import { checkAiPatterns, type AiPatternResult } from './aiPatternChecker';
 export type ArticleLength = 'short' | 'medium' | 'long';
 export type Lang = 'en' | 'hi';
 
+// "short" min raised from the reference implementation's 500 to 700 -- every article needs a
+// 700-word floor (see lengthFloor() below), and a category whose own max sat right at that floor
+// left no real room for a "short" article to exist above it.
 const LENGTH_TARGETS: Record<ArticleLength, { min: number; max: number }> = {
-  short: { min: 500, max: 700 },
+  short: { min: 700, max: 900 },
   medium: { min: 900, max: 1300 },
   long: { min: 1600, max: 2200 },
 };
@@ -68,7 +71,7 @@ export async function buildGroundingContext(): Promise<string> {
     modelsFile?.content ?? '(unavailable)',
     '',
     'ARTICLES ALREADY PUBLISHED (do not repropose these same topics):',
-    existing.length ? existing.map((t) => `- ${t}`).join('\n') : '(none yet)',
+    existing.length ? existing.map((t: string) => `- ${t}`).join('\n') : '(none yet)',
   ].join('\n');
   groundingCache = { text, fetchedAt: Date.now() };
   return text;
@@ -260,8 +263,13 @@ export function wordCount(markdown: string): number {
   return markdown.trim().split(/\s+/).filter(Boolean).length;
 }
 
+// Hard floor: 700 words for every article regardless of length tier, per explicit product
+// requirement -- not just 85% of the selected tier's own minimum (which, for "short", would
+// otherwise allow an article as low as 595 words).
+const ABSOLUTE_MIN_WORDS = 700;
+
 export function lengthFloor(length: ArticleLength): number {
-  return Math.round(LENGTH_TARGETS[length].min * 0.85);
+  return Math.max(ABSOLUTE_MIN_WORDS, Math.round(LENGTH_TARGETS[length].min * 0.85));
 }
 
 const MAX_EXPAND_ATTEMPTS = 2;
@@ -352,8 +360,11 @@ export async function humanizeArticle(
     `${editorialSystemPreamble()}\n\nRevise the article below: vary sentence rhythm, cut repetitive ` +
     `AI-sounding phrasing and filler transitions (examples to avoid or rewrite when they add no specific ` +
     `meaning: ${HUMANIZER_PHRASE_LIST}), keep every fact/figure exactly as given (do not add or remove ` +
-    'claims). Also actively fix: bullet lists of unanswered rhetorical questions (cut, or state what IS ' +
-    'known); hedge-word-heavy speculation piled up in one paragraph (state what is confirmed, stop); an ' +
+    'claims). The core move is replacing vague, abstract claims with concrete specifics: "these platforms ' +
+    'facilitate comprehensive solutions" tells the reader nothing; "handles the repetitive parts -- ' +
+    'outlines, first drafts, research summaries" does. Prefer short, direct sentences over inflated ones. ' +
+    'Also actively fix: bullet lists of unanswered rhetorical questions (cut, or state what IS known); ' +
+    'hedge-word-heavy speculation piled up in one paragraph (state what is confirmed, stop); an ' +
     'appositive-opener sentence (rewrite to lead with the fact); a generic "monitor/keep an eye on" closer ' +
     'with no specific next step named; a closing paragraph that praises a source as "reliable/thorough" ' +
     '(just cite it). Respond ONLY with JSON: {"contentMarkdown": string (the revised article), "qualityNote": ' +
@@ -515,6 +526,33 @@ export async function seoOptimize(
   };
 }
 
+/** Dedicated, lighter-weight internal-linking pass -- separate from seoOptimize() (which also
+ * rewrites title/meta/keywords) so "add missing internal links" can be re-run on its own, e.g.
+ * after a fact-check/humanize pass has changed the body and the previous link suggestions may no
+ * longer land where they used to. */
+export async function suggestInternalLinksOnly(
+  contentMarkdown: string,
+  linkCandidates: InternalLinkCandidate[],
+  provider: string,
+  deadline?: number,
+): Promise<{ anchorText: string; url: string; reason: string }[]> {
+  if (!linkCandidates.length) return [];
+  const system =
+    `${editorialSystemPreamble()}\n\nReview the candidate internal-link targets below against this article ` +
+    'and suggest 2-5 that would genuinely help a reader -- candidates only, not auto-inserted, so pick ones ' +
+    'an editor would actually want and give natural anchor text drawn VERBATIM from the article\'s own ' +
+    'wording (never "click here", never invented phrasing not already in the text). Respond ONLY with JSON: ' +
+    '{"suggestions": [{"anchorText": string (must appear verbatim in the article below), "url": string ' +
+    '(must be one of the candidate URLs below, verbatim), "reason": string}] (0-5, empty if none genuinely fit)}.';
+  const candidateList = linkCandidates.map((c) => `- ${c.title}: ${c.url}`).join('\n');
+  const user = `CANDIDATE INTERNAL-LINK TARGETS:\n${candidateList}\n\n${contentMarkdown}`;
+  const data = await completeJSON<any>(user, { system, provider, deadline, maxTokens: 800 });
+  const validUrls = new Set(linkCandidates.map((c) => c.url));
+  return (Array.isArray(data.suggestions) ? data.suggestions : [])
+    .filter((s: any) => s?.url && validUrls.has(s.url) && s?.anchorText)
+    .map((s: any) => ({ anchorText: s.anchorText, url: s.url, reason: s.reason || '' }));
+}
+
 function escapeRegExpLiteral(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -524,7 +562,7 @@ function escapeRegExpLiteral(s: string): string {
 export function applyInternalLinks(
   markdown: string,
   suggestions: { anchorText: string; url: string; reason?: string }[],
-): { markdown: string; inserted: { anchorText: string; url: string }[]; skipped: { anchorText: string; url: string }[] } {
+): { markdown: string; inserted: { anchorText: string; url: string }[]; skipped: { anchorText: string; url: string; reason?: string }[] } {
   const lines = markdown.split('\n');
   const remaining = suggestions.slice();
   const inserted: { anchorText: string; url: string }[] = [];
@@ -564,7 +602,13 @@ export function applyInternalLinks(
     }
   }
 
-  return { markdown: lines.join('\n'), inserted, skipped: remaining.map((r) => ({ anchorText: r.anchorText, url: r.url })) };
+  return {
+    markdown: lines.join('\n'),
+    inserted,
+    // reason carried through so the UI can show why a suggestion wasn't auto-inserted (anchor
+    // text not found verbatim) alongside a manual "insert anyway" action -- see admin/blog/ai.astro.
+    skipped: remaining.map((r) => ({ anchorText: r.anchorText, url: r.url, reason: r.reason })),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
