@@ -1,0 +1,127 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { list } from '@vercel/blob';
+import { sql } from '../../../lib/db';
+
+// Every image currently in Blob storage under blog/ -- covers hero images,
+// in-body images (both AI-generated and uploaded), and anything uploaded
+// straight through this Media Library.
+const { blobs } = await list({ prefix: 'blog/', limit: 200 });
+const sorted = [...blobs].sort((a, b) => +new Date(b.uploadedAt) - +new Date(a.uploadedAt));
+
+// Cross-reference against articles so the library can warn before deleting
+// something still in use, rather than silently leaving a broken <img>.
+const articles = (await sql()`SELECT id, title, lang, hero_image, body_md FROM articles`) as
+  { id: number; title: string; lang: string; hero_image: string; body_md: string }[];
+function usedIn(url: string): { id: number; title: string; lang: string }[] {
+  return articles
+    .filter((a) => a.hero_image === url || a.body_md.includes(url))
+    .map((a) => ({ id: a.id, title: a.title, lang: a.lang }));
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+---
+<AdminLayout title="Media Library" active="media" sub={`${sorted.length} image(s) in Vercel Blob storage`}>
+  <div class="card p-3 mb-3">
+    <h2 class="h6 fw-bold mb-2">⬆ Upload</h2>
+    <form id="uploadForm" class="d-flex gap-2 align-items-center flex-wrap">
+      <input class="form-control form-control-sm" type="file" name="file" id="uploadInput" accept="image/*" style="max-width: 320px;" required />
+      <button class="btn btn-accent btn-sm" type="submit" id="uploadBtn">Upload</button>
+      <span class="small text-secondary" id="uploadStatus"></span>
+    </form>
+  </div>
+
+  <div class="card p-3">
+    {sorted.length === 0 ? (
+      <p class="text-secondary small mb-0">No images yet — generate one from a blog article, or upload one above.</p>
+    ) : (
+      <div class="row g-3" id="mediaGrid">
+        {sorted.map((b) => {
+          const used = usedIn(b.url);
+          return (
+            <div class="col-6 col-md-4 col-lg-3" data-media-item={b.url}>
+              <div class="card p-2 h-100">
+                <img src={b.url} alt={b.pathname} style="width: 100%; aspect-ratio: 16/9; object-fit: cover;" class="mb-2" loading="lazy" />
+                <div class="small mono text-secondary text-truncate" title={b.pathname}>{b.pathname}</div>
+                <div class="small text-secondary">{formatBytes(b.size)} · {new Date(b.uploadedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</div>
+                {used.length > 0 ? (
+                  <div class="small mt-1">
+                    Used in: {used.map((a) => <a href={`/admin/blog/${a.id}`} class="d-block">{a.title} ({a.lang.toUpperCase()})</a>)}
+                  </div>
+                ) : (
+                  <div class="small text-secondary mt-1">Not used in any article</div>
+                )}
+                <div class="d-flex gap-1 mt-2">
+                  <button type="button" class="btn btn-outline-light-subtle btn-sm flex-fill" data-copy-url={b.url}>Copy URL</button>
+                  <button type="button" class="btn btn-outline-danger btn-sm" data-delete-url={b.url} data-used={used.length}>🗑</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  <script>
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadStatus = document.getElementById('uploadStatus');
+    uploadForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('uploadInput');
+      const btn = document.getElementById('uploadBtn');
+      if (!input.files?.length) return;
+      const form = new FormData();
+      form.set('file', input.files[0]);
+      btn.disabled = true;
+      uploadStatus.textContent = 'Uploading…';
+      try {
+        const res = await fetch('/admin/api/media/upload', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed.');
+        uploadStatus.textContent = '✓ Uploaded — reloading…';
+        window.location.reload();
+      } catch (err) {
+        uploadStatus.textContent = '✗ ' + err.message;
+        btn.disabled = false;
+      }
+    });
+
+    document.querySelectorAll('[data-copy-url]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(btn.dataset.copyUrl);
+        const original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = original; }, 1500);
+      });
+    });
+
+    document.querySelectorAll('[data-delete-url]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const usedCount = Number(btn.dataset.used || 0);
+        const warning = usedCount > 0
+          ? `This image is used in ${usedCount} article(s) — deleting it will break that image there. Delete anyway?`
+          : 'Delete this image? This cannot be undone.';
+        if (!confirm(warning)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch('/admin/api/media/delete', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: btn.dataset.deleteUrl }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Delete failed.');
+          document.querySelector(`[data-media-item="${btn.dataset.deleteUrl}"]`)?.remove();
+        } catch (err) {
+          alert('Delete failed: ' + err.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  </script>
+</AdminLayout>

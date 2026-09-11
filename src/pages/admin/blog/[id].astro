@@ -55,6 +55,13 @@ const counterpartImages: { url: string; alt: string }[] = counterpart?.body_md
   ? [...counterpart.body_md.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g)].map((m) => ({ alt: m[1], url: m[2] }))
   : [];
 
+// This article's own in-body images, server-rendered so the list shows immediately on page load
+// instead of waiting for client JS to scan the textarea (see #bodyImagesList's client-side
+// re-scan on every edit, which keeps this in sync as the admin adds/removes images).
+const bodyImages: { url: string; alt: string }[] = article.body_md
+  ? [...article.body_md.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g)].map((m) => ({ alt: m[1], url: m[2] }))
+  : [];
+
 const saved = Astro.url.searchParams.get('saved');
 const err = Astro.url.searchParams.get('err');
 
@@ -184,7 +191,21 @@ const hasPipelineReport = Boolean(
             </div>
           </div>
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
-          <div class="mt-2" id="bodyImagesList"></div>
+          <div class="mt-2" id="bodyImagesList">
+            {bodyImages.length > 0 && (
+              <>
+                <div class="small text-secondary mb-1">Images in this article:</div>
+                <div class="d-flex flex-wrap gap-2">
+                  {bodyImages.map((img, i) => (
+                    <div class="text-center">
+                      <img src={img.url} alt={img.alt} style="width: 84px; height: 47px; object-fit: cover; display: block;" class="mb-1" />
+                      <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" data-remove-body-image={i}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           <div class="border-top border-secondary-subtle pt-2 mt-2">
             {llmReady && (
