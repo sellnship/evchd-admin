@@ -31,13 +31,28 @@ if (!isNew) {
   article = rows[0];
 }
 
-// EN↔HI pair: same slug, other lang.
+// EN↔HI pair: same slug, other lang. Looked up for isNew too (not just existing
+// articles) so a freshly-created translation counterpart can default its hero
+// image and offer the other language's in-body images for reuse -- images are
+// the same real-world subject regardless of which language describes them, so
+// there's no reason to regenerate/re-upload them per language.
 let counterpart: Article | null = null;
-if (!isNew && article.slug) {
+if (article.slug) {
   const other = article.lang === 'hi' ? 'en' : 'hi';
   const rows = (await sql()`SELECT * FROM articles WHERE slug = ${article.slug} AND lang = ${other}`) as unknown as Article[];
   counterpart = rows[0] ?? null;
 }
+
+// Hero: only offered as a *default* when this article doesn't already have its
+// own -- never silently overrides a hero already picked for this language.
+const inheritedHeroImage = !article.hero_image && counterpart?.hero_image ? counterpart.hero_image : '';
+
+// In-body images already used in the counterpart's markdown, offered as
+// one-click "reuse" inserts instead of generating a fresh AI image for the
+// same scene in the other language.
+const counterpartImages: { url: string; alt: string }[] = counterpart?.body_md
+  ? [...counterpart.body_md.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g)].map((m) => ({ alt: m[1], url: m[2] }))
+  : [];
 
 const saved = Astro.url.searchParams.get('saved');
 const err = Astro.url.searchParams.get('err');
@@ -177,6 +192,11 @@ const hasPipelineReport = Boolean(
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="factCheckBtn">✓ Fact Check</button>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="seoCheckBtn">🔎 SEO Check</button>
                   <button type="button" class="btn btn-warning btn-sm d-none" id="expandBtn">📏 Expand Article</button>
+                  {counterpart?.body_md && (
+                    <button type="button" class="btn btn-outline-light-subtle btn-sm" id="translateBtn">
+                      🌐 Translate from {counterpart.lang === 'hi' ? 'Hindi' : 'English'} version
+                    </button>
+                  )}
                 </>
               ) : (
                 <span class="small text-secondary align-self-center">Fact-check &amp; SEO check need an LLM key — <a href="/admin/settings">add one in Settings</a>.</span>
@@ -189,6 +209,22 @@ const hasPipelineReport = Boolean(
             <div class="mt-2" id="factCheckResults" style="display:none;"></div>
             <div class="mt-2" id="seoCheckResults" style="display:none;"></div>
           </div>
+
+          {counterpartImages.length > 0 && (
+            <div class="border-top border-secondary-subtle pt-2 mt-2">
+              <label class="form-label small fw-bold mb-1">
+                🔁 Reuse images from the {counterpart!.lang === 'hi' ? 'Hindi' : 'English'} version
+              </label>
+              <div class="d-flex flex-wrap gap-2">
+                {counterpartImages.map((img, i) => (
+                  <button type="button" class="btn btn-outline-light-subtle btn-sm p-1" data-reuse-image={i} title={img.alt}>
+                    <img src={img.url} alt={img.alt} style="width: 64px; height: 36px; object-fit: cover; display: block;" />
+                  </button>
+                ))}
+              </div>
+              <div class="small text-secondary mt-1">Click to insert the same image at your cursor -- no need to regenerate it for this language.</div>
+            </div>
+          )}
 
           {!isNew && imagesReady && (
             <div class="border-top border-secondary-subtle pt-2 mt-2">
@@ -247,10 +283,19 @@ const hasPipelineReport = Boolean(
           <div id="heroImageBox">
             {article.hero_image ? (
               <img class="hero-thumb mb-2" src={article.hero_image} alt="hero" />
+            ) : inheritedHeroImage ? (
+              <>
+                <img class="hero-thumb mb-1" src={inheritedHeroImage} alt="hero" />
+                <p class="small text-secondary mb-2">
+                  Using the {counterpart!.lang === 'hi' ? 'Hindi' : 'English'} version's hero by default —
+                  💾 Save to confirm, or generate/upload a different one below first.
+                </p>
+              </>
             ) : (
               <p class="small text-secondary mb-2">No hero yet.</p>
             )}
           </div>
+          <input type="hidden" name="inherited_hero_image" value={inheritedHeroImage} />
           <label class="form-label small mb-1">Upload your own</label>
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
           <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
@@ -360,12 +405,27 @@ const hasPipelineReport = Boolean(
     </div>
   </div>
 
-  <script>
+  <script define:vars={{ counterpartTitle: counterpart?.title ?? '', counterpartBody: counterpart?.body_md ?? '', targetLang: article.lang }}>
     // Live word count + target-length guidance on the Body textarea — matches
     // the AI Generator page's counter, but this page never had one (manual
     // edits and continuing an AI draft here both need to see it against the
     // 700-word minimum, not just during the initial AI Generator run).
     const bodyEditorEl = document.getElementById('bodyEditor');
+
+    // Reuse-from-other-language images: insert the same image markdown at the
+    // cursor rather than regenerating a fresh AI image for the same scene.
+    document.querySelectorAll('[data-reuse-image]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const img = btn.querySelector('img');
+        const md = `\n\n![${img.alt.replace(/[[\]]/g, '')}](${img.src})\n\n`;
+        const pos = bodyEditorEl.selectionStart ?? bodyEditorEl.value.length;
+        bodyEditorEl.value = bodyEditorEl.value.slice(0, pos) + md + bodyEditorEl.value.slice(pos);
+        bodyEditorEl.focus();
+        bodyEditorEl.setSelectionRange(pos + md.length, pos + md.length);
+        updateBodyWordCount();
+      });
+    });
+
     const bodyWordCountEl = document.getElementById('bodyWordCount');
     const targetLengthEl = document.getElementById('targetLength');
     const lengthStatusEl = document.getElementById('lengthStatus');
@@ -651,6 +711,38 @@ const hasPipelineReport = Boolean(
         } finally {
           finishProgress();
           expandBtn.disabled = false; expandBtn.textContent = original;
+        }
+      });
+    }
+
+    // Translate from the other language's counterpart -- keeps EN/HI aligned in
+    // structure/facts instead of letting two independently-drafted versions
+    // diverge. Replaces this article's Title + Body, so confirm first.
+    const translateBtn = document.getElementById('translateBtn');
+    if (translateBtn) {
+      translateBtn.addEventListener('click', async () => {
+        const langLabel = targetLang === 'hi' ? 'Hindi' : 'English';
+        if (!confirm(`Replace this article's Title and Body with a fresh translation from the ${targetLang === 'hi' ? 'English' : 'Hindi'} version? This overwrites what's currently in the editor.`)) return;
+        const original = translateBtn.textContent;
+        translateBtn.disabled = true; translateBtn.textContent = 'Translating…';
+        setToolsStatus(`Translating into ${langLabel}, keeping the same structure and facts… (~20-30s)`, false);
+        const finishProgress = startToolsProgress(25);
+        try {
+          const res = await fetch('/admin/api/blog/translate-from-counterpart', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceTitle: counterpartTitle, sourceMarkdown: counterpartBody, targetLang }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(data.error || 'Translation failed.');
+          document.querySelector('input[name="title"]').value = data.title;
+          bodyEditorEl.value = data.contentMarkdown;
+          updateBodyWordCount();
+          setToolsStatus(`Translated from the ${targetLang === 'hi' ? 'English' : 'Hindi'} version — review, then 💾 Save.`, false);
+        } catch (err) {
+          setToolsStatus(`Translation failed: ${err.message} — try again, or check your LLM key in Settings.`, true);
+        } finally {
+          finishProgress();
+          translateBtn.disabled = false; translateBtn.textContent = original;
         }
       });
     }

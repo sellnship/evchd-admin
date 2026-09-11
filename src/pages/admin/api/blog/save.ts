@@ -24,6 +24,10 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   // save that never touched those tools doesn't wipe out an AI pipeline's report.
   const factCheckJson = String(form.get('fact_check_json') ?? '').trim();
   const seoReportJson = String(form.get('seo_report_json') ?? '').trim();
+  // The EN/HI counterpart's hero, offered as a default in blog/[id].astro when
+  // this article doesn't have its own yet -- only actually applied here if
+  // nothing else (a fresh upload, or an already-saved hero) takes priority.
+  const inheritedHeroImage = String(form.get('inherited_hero_image') ?? '').trim();
   const tags = String(form.get('tags') ?? '')
     .split(',')
     .map((t) => t.trim())
@@ -64,7 +68,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
           author = COALESCE(NULLIF(${author}, ''), author),
           reviewed_by = COALESCE(NULLIF(${reviewed_by}, ''), reviewed_by),
           tags = ${tags}, body_md = ${body_md},
-          hero_image = COALESCE(${heroUrl}, hero_image),
+          hero_image = COALESCE(${heroUrl}, NULLIF(hero_image, ''), NULLIF(${inheritedHeroImage}, '')),
           fact_check_json = COALESCE(NULLIF(${factCheckJson}, '')::jsonb, fact_check_json),
           seo_report_json = COALESCE(NULLIF(${seoReportJson}, '')::jsonb, seo_report_json),
           date_modified = now(), updated_at = now()
@@ -72,7 +76,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     } else {
       const rows = (await q`
         INSERT INTO articles (slug, lang, title, description, category, hero_image, author, reviewed_by, tags, body_md, status, source, fact_check_json, seo_report_json)
-        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? ''}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
+        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? inheritedHeroImage ?? ''}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
         ON CONFLICT (slug, lang) DO UPDATE SET
           title = EXCLUDED.title, description = EXCLUDED.description, category = EXCLUDED.category,
           hero_image = COALESCE(NULLIF(EXCLUDED.hero_image, ''), articles.hero_image),
