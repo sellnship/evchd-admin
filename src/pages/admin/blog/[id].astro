@@ -184,6 +184,7 @@ const hasPipelineReport = Boolean(
             </div>
           </div>
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
+          <div class="mt-2" id="bodyImagesList"></div>
 
           <div class="border-top border-secondary-subtle pt-2 mt-2">
             {llmReady && (
@@ -295,7 +296,10 @@ const hasPipelineReport = Boolean(
           <h2 class="h6 fw-bold">Hero image</h2>
           <div id="heroImageBox">
             {article.hero_image ? (
-              <img class="hero-thumb mb-2" src={article.hero_image} alt="hero" />
+              <>
+                <img class="hero-thumb mb-1" src={article.hero_image} alt="hero" />
+                <button type="button" class="btn btn-outline-danger btn-sm mb-2" id="removeHeroBtn">🗑 Remove hero</button>
+              </>
             ) : inheritedHeroImage ? (
               <>
                 <img class="hero-thumb mb-1" src={inheritedHeroImage} alt="hero" />
@@ -456,9 +460,36 @@ const hasPipelineReport = Boolean(
     function wordCount(text) {
       return text.trim() ? text.trim().split(/\s+/).length : 0;
     }
+
+    // Live list of images currently in the body -- re-scanned on every edit so
+    // it never goes stale, with a Remove button per image (deletes that exact
+    // markdown image tag, including a following blank line if there is one).
+    function renderBodyImagesList() {
+      const box = document.getElementById('bodyImagesList');
+      const matches = [...bodyEditorEl.value.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g)];
+      if (!matches.length) { box.innerHTML = ''; return; }
+      box.innerHTML =
+        '<div class="small text-secondary mb-1">Images in this article:</div>' +
+        '<div class="d-flex flex-wrap gap-2">' +
+        matches.map((m, i) => `
+          <div class="text-center">
+            <img src="${m[2]}" alt="${esc(m[1])}" style="width: 84px; height: 47px; object-fit: cover; display: block;" class="mb-1" />
+            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" data-remove-body-image="${i}">Remove</button>
+          </div>`).join('') +
+        '</div>';
+      box.querySelectorAll('[data-remove-body-image]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const m = matches[Number(btn.dataset.removeBodyImage)];
+          bodyEditorEl.value = bodyEditorEl.value.replace(m[0] + '\n\n', '').replace(m[0], '');
+          updateBodyWordCount();
+        });
+      });
+    }
+
     function updateBodyWordCount() {
       const words = wordCount(bodyEditorEl.value);
       bodyWordCountEl.textContent = `(${words} word${words === 1 ? '' : 's'})`;
+      renderBodyImagesList();
       const [min, max] = LENGTH_RANGES[targetLengthEl.value];
       if (words < 700) {
         lengthStatusEl.textContent = 'below the 700-word minimum';
@@ -845,6 +876,40 @@ const hasPipelineReport = Boolean(
         return imageEstimates[key] || { cost: '~$0.04', time: 20 };
       }
 
+      // Rebuilds the hero preview box (used after generating a new one) and
+      // (re)wires the Remove button, since replacing innerHTML drops listeners.
+      function renderHeroBox(url) {
+        document.getElementById('heroImageBox').innerHTML =
+          `<img class="hero-thumb mb-1" src="${url}" alt="hero" />` +
+          `<button type="button" class="btn btn-outline-danger btn-sm mb-2" id="removeHeroBtn">🗑 Remove hero</button>`;
+        wireRemoveHeroBtn();
+      }
+      function wireRemoveHeroBtn() {
+        const removeBtn = document.getElementById('removeHeroBtn');
+        if (!removeBtn) return;
+        removeBtn.addEventListener('click', async () => {
+          if (!confirm('Remove the hero image? You can generate or upload a new one after.')) return;
+          const original = removeBtn.textContent;
+          removeBtn.disabled = true; removeBtn.textContent = 'Removing…';
+          try {
+            const res = await fetch('/admin/api/blog/remove-hero', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: articleId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Remove failed.');
+            document.getElementById('heroImageBox').innerHTML = '<p class="small text-secondary mb-2">No hero yet.</p>';
+            const heroAltInput = document.getElementById('heroAltInput');
+            if (heroAltInput) heroAltInput.value = '';
+            document.getElementById('heroStatus').textContent = '✓ Hero removed.';
+          } catch (e) {
+            removeBtn.disabled = false; removeBtn.textContent = original;
+            document.getElementById('heroStatus').textContent = '✗ ' + e.message;
+          }
+        });
+      }
+      wireRemoveHeroBtn();
+
       // Fake-but-honest progress: no incremental status is available from these
       // non-streaming image APIs, so this eases toward ~90% over the estimated
       // time and only jumps to 100% once the request actually resolves.
@@ -904,8 +969,7 @@ const hasPipelineReport = Boolean(
             const res = await fetch('/admin/api/blog/genhero', { method: 'POST', body: form });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'hero generation failed');
-            document.getElementById('heroImageBox').innerHTML =
-              `<img class="hero-thumb mb-2" src="${data.url}" alt="hero" />`;
+            renderHeroBox(data.url);
             const heroAltInput = document.getElementById('heroAltInput');
             if (heroAltInput && !heroAltInput.value.trim()) heroAltInput.value = prompt;
             heroStatusEl.textContent = '✓ Hero generated and saved — Alt text suggested below, edit if needed.';
