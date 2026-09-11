@@ -239,9 +239,9 @@ const hasPipelineReport = Boolean(
           {!isNew && imagesReady && (
             <div class="border-top border-secondary-subtle pt-2 mt-2">
               <label class="form-label small fw-bold mb-1">🖼 Insert AI image at cursor</label>
-              <div class="d-flex gap-2">
-                <input class="form-control form-control-sm" id="bodyImgPrompt"
-                       placeholder="Describe the scene for this in-article image" />
+              <input class="form-control form-control-sm mb-2" id="bodyImgPrompt"
+                     placeholder="Describe the scene for this in-article image" />
+              <div class="d-flex gap-2 flex-wrap">
                 <select class="form-select form-select-sm w-auto" id="bodyImgModel">
                   {imageModels.map((m) => (
                     <option value={m.id} selected={m.id === defaultImageModel}>{m.label}</option>
