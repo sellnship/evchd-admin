@@ -9,7 +9,7 @@
 // notices/tenders. Every stage composes its system prompt from blogEditorialRules.ts so the site
 // identity / hard prohibitions / content rules stay consistent across every call.
 import { completeJSON } from './llm';
-import { getFile } from './github';
+import { getFile, listDir } from './github';
 import { sql } from './db';
 import {
   editorialSystemPreamble,
@@ -91,12 +91,55 @@ export interface InternalLinkCandidate {
  * articles. (gmada.in also links to category-specific static pages; evchd's guides/news/compare
  * static content isn't wired in here yet -- articles-only candidates for now, extend this list
  * once specific evergreen guide URLs are worth curating.) */
-export async function buildInternalLinkCandidates(lang: Lang): Promise<InternalLinkCandidate[]> {
+export async function buildInternalLinkCandidates(lang: Lang, excludeSlug?: string): Promise<InternalLinkCandidate[]> {
   const rows = (await sql()`
     SELECT slug, title FROM articles WHERE status = 'published' AND lang = ${lang}
     ORDER BY date_published DESC LIMIT 20`) as { slug: string; title: string }[];
   const prefix = lang === 'hi' ? '/hi/blog' : '/blog';
-  return rows.map((r) => ({ title: r.title, url: `${prefix}/${r.slug}` }));
+  return rows.filter((r) => r.slug !== excludeSlug).map((r) => ({ title: r.title, url: `${prefix}/${r.slug}` }));
+}
+
+// Evergreen guides/compare/news candidates, read-only from the main site repo (same GitHub access
+// already used for local-facts.json/models.json grounding). Extends the once-articles-only
+// candidate pool noted above -- with usually only a handful of blog posts published at any time,
+// internal-link suggestions had almost nothing to point to; the site's static content is a much
+// richer, already-published pool worth linking into. Cached like groundingCache since this
+// content changes rarely and a SEO-check shouldn't pay for ~20 GitHub API calls every time.
+let staticPageCache: { candidates: Record<Lang, InternalLinkCandidate[]>; fetchedAt: number } | null = null;
+const STATIC_PAGE_CACHE_MS = 15 * 60 * 1000;
+
+export async function buildStaticPageCandidates(lang: Lang): Promise<InternalLinkCandidate[]> {
+  if (staticPageCache && Date.now() - staticPageCache.fetchedAt < STATIC_PAGE_CACHE_MS) {
+    return staticPageCache.candidates[lang];
+  }
+  const collections = ['guides', 'compare', 'news'];
+  const result: Record<Lang, InternalLinkCandidate[]> = { en: [], hi: [] };
+  await Promise.all(
+    collections.map(async (col) => {
+      for (const l of ['en', 'hi'] as Lang[]) {
+        const dirPath = l === 'hi' ? `src/content/${col}/hi` : `src/content/${col}`;
+        try {
+          const entries = await listDir(dirPath);
+          const files = entries.filter((e) => e.type === 'file' && e.name.endsWith('.md'));
+          const withTitles = await Promise.all(
+            files.map(async (f) => {
+              try {
+                const { content } = await getFile(f.path);
+                const titleMatch = content.match(/^title:\s*"?(.*?)"?\s*$/m);
+                if (!titleMatch) return null;
+                const slug = f.name.replace(/\.md$/, '');
+                const url = l === 'hi' ? `/hi/${col}/${slug}` : `/${col}/${slug}`;
+                return { title: titleMatch[1], url };
+              } catch { return null; }
+            }),
+          );
+          result[l].push(...withTitles.filter((x): x is InternalLinkCandidate => x !== null));
+        } catch { /* directory may not exist for this collection/lang -- skip */ }
+      }
+    }),
+  );
+  staticPageCache = { candidates: result, fetchedAt: Date.now() };
+  return result[lang];
 }
 
 /** Candidates for blogDedupe.ts's checkDuplicate() -- same language only (an EN/HI translation

@@ -185,6 +185,13 @@ const hasPipelineReport = Boolean(
           <textarea class="form-control body-editor" name="body_md" id="bodyEditor">{article.body_md}</textarea>
 
           <div class="border-top border-secondary-subtle pt-2 mt-2">
+            {llmReady && (
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <label class="small text-secondary mb-0">Focus keyword <span class="text-secondary">(optional, for SEO Check)</span></label>
+                <input class="form-control form-control-sm w-auto" id="focusKeywordInput" style="max-width: 260px;"
+                       placeholder="e.g. electric scooter hacking" />
+              </div>
+            )}
             <div class="d-flex gap-2 flex-wrap">
               <button type="button" class="btn btn-outline-light-subtle btn-sm" id="previewBtn">👁 Preview</button>
               {llmReady ? (
@@ -299,6 +306,11 @@ const hasPipelineReport = Boolean(
           <label class="form-label small mb-1">Upload your own</label>
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
           <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
+
+          <label class="form-label small mb-1">Alt text <span class="text-secondary fw-normal">(accessibility &amp; SEO)</span></label>
+          <input class="form-control form-control-sm mb-2" id="heroAltInput" name="image_alt" value={article.image_alt ?? ''}
+                 placeholder="Describe what's actually in the image, e.g. a rider charging a low-speed scooter in a Chandigarh sector" />
+          <div class="small text-secondary mt-1 mb-2">Falls back to the article title on the live site if left blank.</div>
 
           <div class="border-top border-secondary-subtle pt-2">
             <label class="form-label small fw-bold mb-1">🎨 Generate with AI</label>
@@ -641,12 +653,16 @@ const hasPipelineReport = Boolean(
               title: document.querySelector('input[name="title"]').value.trim(),
               contentMarkdown: bodyEditorEl.value,
               category: document.querySelector('select[name="category"]').value,
+              slug: document.querySelector('input[name="slug"]').value.trim(),
+              lang: targetLang,
+              focusKeyword: document.getElementById('focusKeywordInput')?.value.trim() || undefined,
             }),
           });
           const data = await safeJson(res);
           if (!res.ok) throw new Error(data.error || 'SEO check failed.');
           bodyEditorEl.value = data.contentMarkdown;
           updateBodyWordCount();
+          if (data.seoTitle) document.querySelector('input[name="title"]').value = data.seoTitle;
           const descEl = document.querySelector('textarea[name="description"]');
           if (data.seoDescription) descEl.value = data.seoDescription;
           document.getElementById('seoReportJsonInput').value =
@@ -656,7 +672,7 @@ const hasPipelineReport = Boolean(
             ? ` — ${data.internalLinksInserted.length} internal link(s) inserted`
             : '';
           setToolsStatus(
-            `SEO score: ${data.seoScore?.score ?? '—'}/100${linksNote} — see details below. 💾 Save to keep this in the Pipeline Report.`,
+            `SEO score: ${data.seoScore?.score ?? '—'}/100${linksNote} — title/description updated above, see details below. 💾 Save to keep this in the Pipeline Report.`,
             (data.seoScore?.score ?? 100) < 70,
           );
         } catch (err) {
@@ -816,7 +832,9 @@ const hasPipelineReport = Boolean(
             if (!res.ok) throw new Error(data.error || 'hero generation failed');
             document.getElementById('heroImageBox').innerHTML =
               `<img class="hero-thumb mb-2" src="${data.url}" alt="hero" />`;
-            heroStatusEl.textContent = '✓ Hero generated and saved.';
+            const heroAltInput = document.getElementById('heroAltInput');
+            if (heroAltInput && !heroAltInput.value.trim()) heroAltInput.value = prompt;
+            heroStatusEl.textContent = '✓ Hero generated and saved — Alt text suggested below, edit if needed.';
           } catch (e) {
             heroStatusEl.textContent = '✗ ' + e.message;
           } finally {
