@@ -198,6 +198,7 @@ const hasPipelineReport = Boolean(
                 <>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="factCheckBtn">✓ Fact Check</button>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="seoCheckBtn">🔎 SEO Check</button>
+                  <button type="button" class="btn btn-outline-light-subtle btn-sm" id="internalLinksBtn">🔗 Add Internal Links</button>
                   <button type="button" class="btn btn-warning btn-sm d-none" id="expandBtn">📏 Expand Article</button>
                   {counterpart?.body_md && (
                     <button type="button" class="btn btn-outline-light-subtle btn-sm" id="translateBtn">
@@ -215,6 +216,7 @@ const hasPipelineReport = Boolean(
             <div class="small mt-1" id="contentToolsStatus"></div>
             <div class="mt-2" id="factCheckResults" style="display:none;"></div>
             <div class="mt-2" id="seoCheckResults" style="display:none;"></div>
+            <div class="small mt-2" id="linksSkippedBox" style="display:none;"></div>
           </div>
 
           {counterpartImages.length > 0 && (
@@ -680,6 +682,69 @@ const hasPipelineReport = Boolean(
         } finally {
           finishProgress();
           seoCheckBtn.disabled = false; seoCheckBtn.textContent = original;
+        }
+      });
+    }
+
+    // Suggestions the auto-linker couldn't place verbatim (anchor text not found in the body) --
+    // shown with a manual "Insert" action so a genuinely good suggestion isn't just silently
+    // dropped. Inserts at the current cursor position, or the end if nothing is focused there.
+    function renderLinksSkipped(skipped) {
+      const box = document.getElementById('linksSkippedBox');
+      if (!skipped || !skipped.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+      box.style.display = '';
+      box.innerHTML = '<div class="text-secondary mb-1">Suggested but not auto-inserted (anchor text not found verbatim):</div>' +
+        skipped.map((s, i) => `
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span>[${esc(s.anchorText)}](${esc(s.url)})${s.reason ? ` — <span class="text-secondary">${esc(s.reason)}</span>` : ''}</span>
+            <button type="button" class="btn btn-sm btn-outline-light-subtle flex-shrink-0" data-insert-link="${i}">Insert</button>
+          </div>`).join('');
+      box.querySelectorAll('[data-insert-link]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const s = skipped[Number(btn.dataset.insertLink)];
+          const md = `[${s.anchorText}](${s.url})`;
+          const pos = bodyEditorEl.selectionStart ?? bodyEditorEl.value.length;
+          bodyEditorEl.value = bodyEditorEl.value.slice(0, pos) + md + bodyEditorEl.value.slice(pos);
+          bodyEditorEl.focus();
+          bodyEditorEl.setSelectionRange(pos + md.length, pos + md.length);
+          updateBodyWordCount();
+          btn.disabled = true;
+          btn.textContent = 'Inserted';
+        });
+      });
+    }
+
+    const internalLinksBtn = document.getElementById('internalLinksBtn');
+    if (internalLinksBtn) {
+      internalLinksBtn.addEventListener('click', async () => {
+        const original = internalLinksBtn.textContent;
+        internalLinksBtn.disabled = true; internalLinksBtn.textContent = 'Linking…';
+        setToolsStatus('Looking for good internal-link opportunities… (~15-20s)', false);
+        document.getElementById('linksSkippedBox').style.display = 'none';
+        const finishProgress = startToolsProgress(18);
+        try {
+          const res = await fetch('/admin/api/blog/internal-links-only', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contentMarkdown: bodyEditorEl.value,
+              slug: document.querySelector('input[name="slug"]').value.trim(),
+              lang: targetLang,
+            }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(data.error || 'Internal linking failed.');
+          bodyEditorEl.value = data.contentMarkdown;
+          updateBodyWordCount();
+          renderLinksSkipped(data.internalLinksSkipped);
+          setToolsStatus(
+            data.note || `${data.internalLinksInserted.length} internal link(s) inserted${data.internalLinksSkipped?.length ? `, ${data.internalLinksSkipped.length} suggested but not found verbatim (see below)` : ''} — 💾 Save when happy.`,
+            false,
+          );
+        } catch (err) {
+          setToolsStatus(`Internal linking failed: ${err.message} — try again, or check your LLM key in Settings.`, true);
+        } finally {
+          finishProgress();
+          internalLinksBtn.disabled = false; internalLinksBtn.textContent = original;
         }
       });
     }
