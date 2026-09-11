@@ -28,6 +28,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   // this article doesn't have its own yet -- only actually applied here if
   // nothing else (a fresh upload, or an already-saved hero) takes priority.
   const inheritedHeroImage = String(form.get('inherited_hero_image') ?? '').trim();
+  const imageAlt = String(form.get('image_alt') ?? '').trim();
   const tags = String(form.get('tags') ?? '')
     .split(',')
     .map((t) => t.trim())
@@ -69,17 +70,19 @@ export const POST: APIRoute = async ({ request, redirect }) => {
           reviewed_by = COALESCE(NULLIF(${reviewed_by}, ''), reviewed_by),
           tags = ${tags}, body_md = ${body_md},
           hero_image = COALESCE(${heroUrl}, NULLIF(hero_image, ''), NULLIF(${inheritedHeroImage}, '')),
+          image_alt = ${imageAlt},
           fact_check_json = COALESCE(NULLIF(${factCheckJson}, '')::jsonb, fact_check_json),
           seo_report_json = COALESCE(NULLIF(${seoReportJson}, '')::jsonb, seo_report_json),
           date_modified = now(), updated_at = now()
         WHERE id = ${Number(id)}`;
     } else {
       const rows = (await q`
-        INSERT INTO articles (slug, lang, title, description, category, hero_image, author, reviewed_by, tags, body_md, status, source, fact_check_json, seo_report_json)
-        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? inheritedHeroImage ?? ''}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
+        INSERT INTO articles (slug, lang, title, description, category, hero_image, image_alt, author, reviewed_by, tags, body_md, status, source, fact_check_json, seo_report_json)
+        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? inheritedHeroImage ?? ''}, ${imageAlt}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
         ON CONFLICT (slug, lang) DO UPDATE SET
           title = EXCLUDED.title, description = EXCLUDED.description, category = EXCLUDED.category,
           hero_image = COALESCE(NULLIF(EXCLUDED.hero_image, ''), articles.hero_image),
+          image_alt = EXCLUDED.image_alt,
           author = COALESCE(NULLIF(EXCLUDED.author, ''), articles.author),
           reviewed_by = COALESCE(NULLIF(EXCLUDED.reviewed_by, ''), articles.reviewed_by),
           fact_check_json = COALESCE(EXCLUDED.fact_check_json, articles.fact_check_json),
