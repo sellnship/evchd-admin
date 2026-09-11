@@ -101,6 +101,14 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       await q`UPDATE articles SET status = 'draft', updated_at = now() WHERE id = ${Number(articleId)}`;
       await logActivity('article.unpublish', { slug, lang });
       await fireDeployHook();
+    } else {
+      // Plain "save" on an ALREADY-published article -- its live content just
+      // changed (title/description/body/hero/etc.), so the site needs a
+      // rebuild too, not just on the draft<->published transition. Otherwise
+      // an edit to a published article silently never reaches the live site
+      // until some unrelated publish/unpublish elsewhere happens to trigger one.
+      const rows = (await q`SELECT status FROM articles WHERE id = ${Number(articleId)}`) as { status: string }[];
+      if (rows[0]?.status === 'published') await fireDeployHook();
     }
 
     return back(articleId, 'saved=1');
