@@ -6,6 +6,7 @@ import { getAvailableImageModels, getDefaultImageModel, getConfiguredProviders }
 import { getCategories } from '../../../lib/categories';
 import { estimateImageCostUsd, estimateImageTimeSec, formatUsd, GPT_IMAGE_QUALITIES } from '../../../lib/apiCost';
 import { getAuthors } from '../../../lib/authors';
+import { IMAGE_SIZES, DEFAULT_IMAGE_SIZE } from '../../../lib/imageSizes';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -251,13 +252,16 @@ const hasPipelineReport = Boolean(
                     <option value={q} selected={q === 'medium'}>{q}</option>
                   ))}
                 </select>
+                <select class="form-select form-select-sm w-auto" id="bodyImgSize">
+                  {IMAGE_SIZES.map((s) => <option value={s.value} selected={s.value === DEFAULT_IMAGE_SIZE}>{s.label}</option>)}
+                </select>
                 <button class="btn btn-outline-light-subtle btn-sm flex-shrink-0" type="button" id="bodyImgBtn">Generate &amp; Insert</button>
               </div>
               <div class="small text-secondary mt-1" id="bodyImgEstimate"></div>
               <div class="progress mt-1 d-none" style="height: 6px;" id="bodyImgProgressWrap">
                 <div class="progress-bar" id="bodyImgProgressBar" role="progressbar" style="width: 0%"></div>
               </div>
-              <div class="small text-secondary mt-1" id="bodyImgStatus">Generates 16:9 (no watermark), uploads, and inserts the markdown where your cursor is.</div>
+              <div class="small text-secondary mt-1" id="bodyImgStatus">Generates at the chosen size (no watermark), uploads, and inserts the markdown where your cursor is.</div>
             </div>
           )}
         </div>
@@ -305,9 +309,13 @@ const hasPipelineReport = Boolean(
             )}
           </div>
           <input type="hidden" name="inherited_hero_image" value={inheritedHeroImage} />
+          <label class="form-label small mb-1">Size <span class="text-secondary fw-normal">(used for upload and AI generation below)</span></label>
+          <select class="form-select form-select-sm mb-2" name="image_size" id="heroSizeSelect">
+            {IMAGE_SIZES.map((s) => <option value={s.value} selected={s.value === DEFAULT_IMAGE_SIZE}>{s.label}</option>)}
+          </select>
           <label class="form-label small mb-1">Upload your own</label>
           <input class="form-control form-control-sm" type="file" name="hero" accept="image/*" />
-          <div class="small text-secondary mt-1 mb-2">Resized to 1200×675 WebP on Vercel Blob (saved with 💾 Save).</div>
+          <div class="small text-secondary mt-1 mb-2">Cover-cropped to the size above, saved as WebP (saved with 💾 Save).</div>
 
           <label class="form-label small mb-1">Alt text <span class="text-secondary fw-normal">(accessibility &amp; SEO)</span></label>
           <input class="form-control form-control-sm mb-2" id="heroAltInput" name="image_alt" value={article.image_alt ?? ''}
@@ -892,6 +900,7 @@ const hasPipelineReport = Boolean(
             form.set('image_prompt', prompt);
             form.set('image_model', heroModelEl.value);
             form.set('image_quality', heroQualityEl.value);
+            form.set('image_size', document.getElementById('heroSizeSelect').value);
             const res = await fetch('/admin/api/blog/genhero', { method: 'POST', body: form });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'hero generation failed');
@@ -933,6 +942,7 @@ const hasPipelineReport = Boolean(
         const prompt = document.getElementById('bodyImgPrompt').value.trim();
         const model = bodyModelEl.value;
         const quality = bodyQualityEl.value;
+        const size = document.getElementById('bodyImgSize').value;
         if (!prompt) { statusEl.textContent = 'Describe the scene first.'; return; }
         const est = estimateFor(model, quality);
         btn.disabled = true;
@@ -942,7 +952,7 @@ const hasPipelineReport = Boolean(
           const res = await fetch('/admin/api/blog/genimage', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ id: articleId, prompt, image_model: model, image_quality: quality }),
+            body: JSON.stringify({ id: articleId, prompt, image_model: model, image_quality: quality, image_size: size }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'generation failed');

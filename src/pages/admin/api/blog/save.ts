@@ -4,8 +4,9 @@ import sharp from 'sharp';
 import { put } from '@vercel/blob';
 import { sql, logActivity } from '../../../../lib/db';
 import { getSetting } from '../../../../lib/settings';
+import { parseImageSize } from '../../../../lib/imageSizes';
 
-const HERO_W = 1200, HERO_H = 675, WEBP_QUALITY = 82;
+const WEBP_QUALITY = 82;
 
 export const POST: APIRoute = async ({ request, redirect }) => {
   const form = await request.formData();
@@ -40,13 +41,14 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('slug must be lowercase letters/digits/hyphens');
     if (!title) throw new Error('title is required');
 
-    // Optional hero upload → 1200×675 WebP on Vercel Blob (same spec as the engine).
+    // Optional hero upload → cover-cropped WebP on Vercel Blob at the chosen size.
     let heroUrl: string | null = null;
     const hero = form.get('hero');
     if (hero instanceof File && hero.size > 0) {
+      const size = parseImageSize(String(form.get('image_size') ?? ''));
       const buf = Buffer.from(await hero.arrayBuffer());
       const webp = await sharp(buf)
-        .resize(HERO_W, HERO_H, { fit: 'cover', position: 'centre' })
+        .resize(size.width, size.height, { fit: 'cover', position: 'centre' })
         .webp({ quality: WEBP_QUALITY })
         .toBuffer();
       const heroSlug = lang === 'hi' ? `${slug}-hi` : slug;

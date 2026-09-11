@@ -18,9 +18,9 @@ async function logoBuffer(): Promise<Buffer> {
     .toBuffer();
 }
 
-/** Cover-crop to 1200×675, watermark bottom-right, return WebP buffer. */
-export async function composeHero(base: Buffer, watermark = true): Promise<Buffer> {
-  let pipeline = sharp(base).resize(HERO_W, HERO_H, { fit: 'cover', position: 'centre' });
+/** Cover-crop to the given size (default 1200×675), watermark bottom-right, return WebP buffer. */
+export async function composeHero(base: Buffer, watermark = true, width = HERO_W, height = HERO_H): Promise<Buffer> {
+  let pipeline = sharp(base).resize(width, height, { fit: 'cover', position: 'centre' });
   if (watermark) {
     try {
       pipeline = pipeline.composite([{ input: await logoBuffer(), gravity: 'southeast' }]);

@@ -4,16 +4,18 @@ import { put } from '@vercel/blob';
 import sharp from 'sharp';
 import { sql, logActivity } from '../../../../lib/db';
 import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
+import { parseImageSize } from '../../../../lib/imageSizes';
 
-// Generate a BODY image (inside the article markdown): 16:9 WebP on Blob, no
-// logo watermark (that's hero-only). Returns JSON { url } — the editor inserts
-// the markdown at the cursor.
+// Generate a BODY image (inside the article markdown): WebP on Blob at the
+// chosen size (see lib/imageSizes.ts), no logo watermark (that's hero-only).
+// Returns JSON { url } — the editor inserts the markdown at the cursor.
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const { id, prompt, image_model, image_quality } = await request.json();
+    const { id, prompt, image_model, image_quality, image_size } = await request.json();
     if (!id) throw new Error('save the article first');
     if (!IMAGE_MODELS.some((m) => m.id === image_model)) throw new Error('unknown image model');
     if (!prompt?.trim()) throw new Error('describe the image first');
+    const size = parseImageSize(image_size);
 
     const rows = (await sql()`SELECT slug, lang FROM articles WHERE id = ${Number(id)}`) as
       { slug: string; lang: string }[];
@@ -28,7 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const base = await generateImage(image_model, fullPrompt, image_quality);
     const webp = await sharp(base)
-      .resize(1200, 675, { fit: 'cover', position: 'centre' })
+      .resize(size.width, size.height, { fit: 'cover', position: 'centre' })
       .webp({ quality: 82 })
       .toBuffer();
 

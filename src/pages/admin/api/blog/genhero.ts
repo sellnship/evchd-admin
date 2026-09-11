@@ -4,6 +4,7 @@ import { put } from '@vercel/blob';
 import { sql, logActivity } from '../../../../lib/db';
 import { generateImage, IMAGE_MODELS } from '../../../../lib/llm';
 import { composeHero } from '../../../../lib/hero';
+import { parseImageSize } from '../../../../lib/imageSizes';
 
 // Generate a hero image with the selected fal.ai model, brand it (1200×675
 // WebP + logo), upload to Vercel Blob, and save it on the article. Returns
@@ -15,6 +16,7 @@ export const POST: APIRoute = async ({ request }) => {
   const modelId = String(form.get('image_model') ?? '');
   const quality = String(form.get('image_quality') ?? '');
   const scene = String(form.get('image_prompt') ?? '').trim();
+  const size = parseImageSize(String(form.get('image_size') ?? ''));
 
   try {
     if (!id) throw new Error('save the article once before generating a hero');
@@ -38,7 +40,7 @@ export const POST: APIRoute = async ({ request }) => {
       `person standing on scooter, scooter with no seat.`;
 
     const base = await generateImage(modelId, prompt, quality);
-    const webp = await composeHero(base);
+    const webp = await composeHero(base, true, size.width, size.height);
 
     const heroSlug = lang === 'hi' ? `${slug}-hi` : slug;
     const blob = await put(`blog/${heroSlug}-hero.webp`, webp, {
