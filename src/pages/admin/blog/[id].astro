@@ -405,7 +405,7 @@ const hasPipelineReport = Boolean(
     </div>
   </div>
 
-  <script define:vars={{ counterpartTitle: counterpart?.title ?? '', counterpartBody: counterpart?.body_md ?? '', targetLang: article.lang }}>
+  <script define:vars={{ counterpartTitle: counterpart?.title ?? '', counterpartDescription: counterpart?.description ?? '', counterpartBody: counterpart?.body_md ?? '', targetLang: article.lang }}>
     // Live word count + target-length guidance on the Body textarea — matches
     // the AI Generator page's counter, but this page never had one (manual
     // edits and continuing an AI draft here both need to see it against the
@@ -722,7 +722,7 @@ const hasPipelineReport = Boolean(
     if (translateBtn) {
       translateBtn.addEventListener('click', async () => {
         const langLabel = targetLang === 'hi' ? 'Hindi' : 'English';
-        if (!confirm(`Replace this article's Title and Body with a fresh translation from the ${targetLang === 'hi' ? 'English' : 'Hindi'} version? This overwrites what's currently in the editor.`)) return;
+        if (!confirm(`Replace this article's Title, Description and Body with a fresh translation from the ${targetLang === 'hi' ? 'English' : 'Hindi'} version? This overwrites what's currently in the editor.`)) return;
         const original = translateBtn.textContent;
         translateBtn.disabled = true; translateBtn.textContent = 'Translating…';
         setToolsStatus(`Translating into ${langLabel}, keeping the same structure and facts… (~20-30s)`, false);
@@ -730,11 +730,12 @@ const hasPipelineReport = Boolean(
         try {
           const res = await fetch('/admin/api/blog/translate-from-counterpart', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceTitle: counterpartTitle, sourceMarkdown: counterpartBody, targetLang }),
+            body: JSON.stringify({ sourceTitle: counterpartTitle, sourceDescription: counterpartDescription, sourceMarkdown: counterpartBody, targetLang }),
           });
           const data = await safeJson(res);
           if (!res.ok) throw new Error(data.error || 'Translation failed.');
           document.querySelector('input[name="title"]').value = data.title;
+          if (data.description) document.querySelector('textarea[name="description"]').value = data.description;
           bodyEditorEl.value = data.contentMarkdown;
           updateBodyWordCount();
           setToolsStatus(`Translated from the ${targetLang === 'hi' ? 'English' : 'Hindi'} version — review, then 💾 Save.`, false);

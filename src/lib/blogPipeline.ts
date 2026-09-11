@@ -347,23 +347,25 @@ export async function applyCustomInstruction(
  *  the source of truth and adapts only language/idiom, not content. Single-shot, not looped. */
 export async function translateArticle(
   sourceTitle: string,
+  sourceDescription: string,
   sourceMarkdown: string,
   targetLang: Lang,
   provider: string,
   deadline?: number,
-): Promise<{ title: string; contentMarkdown: string }> {
+): Promise<{ title: string; description: string; contentMarkdown: string }> {
   const system =
-    `${editorialSystemPreamble()}\n\n${langRules(targetLang)}\n\nTranslate the article below into the ` +
-    'target language above. This must stay a FAITHFUL translation, not a fresh rewrite -- keep the same ' +
-    'headings in the same order, the same facts/figures/examples, and roughly the same length per section. ' +
-    'Do not add sections, drop sections, invent new facts, or restructure the argument. Do translate ' +
-    'naturally and idiomatically (not word-by-word/robotic) within each sentence -- the constraint is on ' +
-    'structure and content, not on literal wording. Respond ONLY with JSON: {"title": string (translated ' +
-    'title), "contentMarkdown": string (the full translated article)}.';
-  const user = `SOURCE TITLE: ${sourceTitle}\n\nSOURCE ARTICLE:\n${sourceMarkdown}`;
+    `${editorialSystemPreamble()}\n\n${langRules(targetLang)}\n\nTranslate the article below (title, meta ` +
+    'description, and body) into the target language above. This must stay a FAITHFUL translation, not a ' +
+    'fresh rewrite -- keep the same headings in the same order, the same facts/figures/examples, and roughly ' +
+    'the same length per section, and a meta description that describes THIS article (not a generic or ' +
+    'unrelated one). Do not add sections, drop sections, invent new facts, or restructure the argument. Do ' +
+    'translate naturally and idiomatically (not word-by-word/robotic) within each sentence -- the constraint ' +
+    'is on structure and content, not on literal wording. Respond ONLY with JSON: {"title": string, ' +
+    '"description": string, "contentMarkdown": string (the full translated article)}.';
+  const user = `SOURCE TITLE: ${sourceTitle}\n\nSOURCE DESCRIPTION: ${sourceDescription}\n\nSOURCE ARTICLE:\n${sourceMarkdown}`;
   const data = await completeJSON<any>(user, { system, provider, deadline, maxTokens: 6000 });
   const { markdown: cleaned } = applyDeterministicCleanup(data.contentMarkdown || sourceMarkdown);
-  return { title: data.title || sourceTitle, contentMarkdown: cleaned };
+  return { title: data.title || sourceTitle, description: data.description || sourceDescription, contentMarkdown: cleaned };
 }
 
 // ---------------------------------------------------------------------------------------------
