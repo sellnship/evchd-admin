@@ -24,7 +24,9 @@ const defaultImageModel = await getDefaultImageModel();
 const infra = [
   { name: 'DATABASE_URL', label: 'Neon Postgres', hint: 'articles + topics database' },
   { name: 'BLOB_READ_WRITE_TOKEN', label: 'Vercel Blob', hint: 'hero image storage' },
-  { name: 'GITHUB_TOKEN', label: 'GitHub PAT', hint: 'site-page edits + engine dispatch' },
+  { name: 'GITHUB_TOKEN', label: 'GitHub PAT', hint: 'internal-link candidates + fact grounding' },
+  { name: 'GOOGLE_INDEXING_CLIENT_EMAIL', label: 'Google Indexing (1/2)', hint: 'service account email' },
+  { name: 'GOOGLE_INDEXING_PRIVATE_KEY', label: 'Google Indexing (2/2)', hint: 'service account private key' },
 ].map((e) => ({ ...e, set: Boolean(env(e.name)) }));
 
 const deployHook = await getSetting('deploy_hook_url');

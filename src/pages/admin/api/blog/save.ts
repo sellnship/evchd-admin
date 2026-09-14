@@ -5,6 +5,7 @@ import { put } from '@vercel/blob';
 import { sql, logActivity } from '../../../../lib/db';
 import { getSetting } from '../../../../lib/settings';
 import { parseImageSize } from '../../../../lib/imageSizes';
+import { notifyGoogleIndexing, articleUrl } from '../../../../lib/googleIndexing';
 
 const WEBP_QUALITY = 82;
 
@@ -105,10 +106,12 @@ export const POST: APIRoute = async ({ request, redirect }) => {
         WHERE id = ${Number(articleId)}`;
       await logActivity('article.publish', { slug, lang });
       await fireDeployHook();
+      await notifyGoogleIndexing(articleUrl(slug, lang), 'URL_UPDATED');
     } else if (action === 'unpublish') {
       await q`UPDATE articles SET status = 'draft', updated_at = now() WHERE id = ${Number(articleId)}`;
       await logActivity('article.unpublish', { slug, lang });
       await fireDeployHook();
+      await notifyGoogleIndexing(articleUrl(slug, lang), 'URL_DELETED');
     } else {
       // Plain "save" on an ALREADY-published article -- its live content just
       // changed (title/description/body/hero/etc.), so the site needs a
@@ -116,7 +119,10 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       // an edit to a published article silently never reaches the live site
       // until some unrelated publish/unpublish elsewhere happens to trigger one.
       const rows = (await q`SELECT status FROM articles WHERE id = ${Number(articleId)}`) as { status: string }[];
-      if (rows[0]?.status === 'published') await fireDeployHook();
+      if (rows[0]?.status === 'published') {
+        await fireDeployHook();
+        await notifyGoogleIndexing(articleUrl(slug, lang), 'URL_UPDATED');
+      }
     }
 
     return back(articleId, 'saved=1');

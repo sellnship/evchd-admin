@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 export const prerender = false;
 import { sql, logActivity } from '../../../../lib/db';
 import { getSetting } from '../../../../lib/settings';
+import { notifyGoogleIndexing, articleUrl } from '../../../../lib/googleIndexing';
 
 // Dedicated JSON-in/JSON-out save endpoint for the AI pipeline UI (admin/blog/ai.astro), separate
 // from api/blog/save.ts (which stays a classic multipart-form/redirect endpoint for the manual
@@ -112,7 +113,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     const articleId = rows[0].id;
     await logActivity(body.status === 'published' ? 'article.publish' : 'article.save', { slug, lang, via: 'ai-pipeline' });
-    if (body.status === 'published') await fireDeployHook();
+    if (body.status === 'published') {
+      await fireDeployHook();
+      await notifyGoogleIndexing(articleUrl(slug, lang), 'URL_UPDATED');
+    }
 
     return new Response(JSON.stringify({ id: articleId, slug, lang }), {
       status: 200,
