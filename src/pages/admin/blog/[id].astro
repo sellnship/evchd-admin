@@ -135,6 +135,10 @@ const hasPipelineReport = Boolean(
               <label class="form-label small">Title</label>
               <input class="form-control" name="title" value={article.title} required />
             </div>
+            <div class="col-md-8">
+              <label class="form-label small">SEO Title <span class="text-secondary">(optional — for the browser tab / search result, defaults to Title)</span></label>
+              <input class="form-control" name="seo_title" id="seoTitleInput" value={article.seo_title ?? ''} maxlength="70" placeholder={article.title} />
+            </div>
             <div class="col-md-4">
               <label class="form-label small">Category</label>
               <select class="form-select" name="category">
@@ -724,7 +728,7 @@ const hasPipelineReport = Boolean(
           if (!res.ok) throw new Error(data.error || 'SEO check failed.');
           bodyEditorEl.value = data.contentMarkdown;
           updateBodyWordCount();
-          if (data.seoTitle) document.querySelector('input[name="title"]').value = data.seoTitle;
+          if (data.seoTitle) document.getElementById('seoTitleInput').value = data.seoTitle;
           const descEl = document.querySelector('textarea[name="description"]');
           if (data.seoDescription) descEl.value = data.seoDescription;
           document.getElementById('seoReportJsonInput').value =

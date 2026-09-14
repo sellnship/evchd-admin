@@ -618,6 +618,7 @@ function stepLabel(s: string): string {
           slug: slug || slugify(document.getElementById('rTitle').value),
           lang: document.getElementById('f_lang').value,
           title: document.getElementById('rTitle').value.trim(),
+          seoTitle: document.getElementById('rSeoTitle').value.trim(),
           excerpt: document.getElementById('rSeoDescription').value.trim() || document.getElementById('rExcerpt').value.trim(),
           category: document.getElementById('rCategory').value,
           tags: document.getElementById('rTags').value.split(',').map((t) => t.trim()).filter(Boolean),

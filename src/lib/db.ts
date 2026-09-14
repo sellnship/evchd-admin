@@ -18,6 +18,7 @@ export interface Article {
   slug: string;
   lang: 'en' | 'hi';
   title: string;
+  seo_title?: string | null;
   description: string;
   category: string;
   hero_image: string;

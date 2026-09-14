@@ -15,6 +15,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const slug = String(form.get('slug') ?? '').trim().toLowerCase();
   const lang = String(form.get('lang') ?? 'en') === 'hi' ? 'hi' : 'en';
   const title = String(form.get('title') ?? '').trim();
+  const seoTitle = String(form.get('seo_title') ?? '').trim();
   const description = String(form.get('description') ?? '').trim();
   const category = String(form.get('category') ?? '').trim();
   const author = String(form.get('author') ?? '').trim();
@@ -67,7 +68,8 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     if (id) {
       await q`
         UPDATE articles SET
-          title = ${title}, description = ${description}, category = ${category},
+          title = ${title}, seo_title = COALESCE(NULLIF(${seoTitle}, ''), seo_title),
+          description = ${description}, category = ${category},
           author = COALESCE(NULLIF(${author}, ''), author),
           reviewed_by = COALESCE(NULLIF(${reviewed_by}, ''), reviewed_by),
           tags = ${tags}, body_md = ${body_md},
@@ -79,10 +81,11 @@ export const POST: APIRoute = async ({ request, redirect }) => {
         WHERE id = ${Number(id)}`;
     } else {
       const rows = (await q`
-        INSERT INTO articles (slug, lang, title, description, category, hero_image, image_alt, author, reviewed_by, tags, body_md, status, source, fact_check_json, seo_report_json)
-        VALUES (${slug}, ${lang}, ${title}, ${description}, ${category}, ${heroUrl ?? inheritedHeroImage ?? ''}, ${imageAlt}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
+        INSERT INTO articles (slug, lang, title, seo_title, description, category, hero_image, image_alt, author, reviewed_by, tags, body_md, status, source, fact_check_json, seo_report_json)
+        VALUES (${slug}, ${lang}, ${title}, ${seoTitle || null}, ${description}, ${category}, ${heroUrl ?? inheritedHeroImage ?? ''}, ${imageAlt}, ${author || 'rajinder-singh'}, ${reviewed_by || 'rajinder-singh'}, ${tags}, ${body_md}, 'draft', 'manual', ${factCheckJson || null}::jsonb, ${seoReportJson || null}::jsonb)
         ON CONFLICT (slug, lang) DO UPDATE SET
-          title = EXCLUDED.title, description = EXCLUDED.description, category = EXCLUDED.category,
+          title = EXCLUDED.title, seo_title = COALESCE(NULLIF(EXCLUDED.seo_title, ''), articles.seo_title),
+          description = EXCLUDED.description, category = EXCLUDED.category,
           hero_image = COALESCE(NULLIF(EXCLUDED.hero_image, ''), articles.hero_image),
           image_alt = EXCLUDED.image_alt,
           author = COALESCE(NULLIF(EXCLUDED.author, ''), articles.author),

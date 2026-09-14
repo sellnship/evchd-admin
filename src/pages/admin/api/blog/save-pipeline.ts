@@ -15,6 +15,7 @@ interface SavePipelineBody {
   slug: string;
   lang: 'en' | 'hi';
   title: string;
+  seoTitle?: string;
   excerpt?: string;
   category: string;
   tags?: string[];
@@ -65,14 +66,14 @@ export const POST: APIRoute = async ({ request }) => {
     const q = sql();
     const rows = (await q`
       INSERT INTO articles (
-        slug, lang, title, description, category, hero_image, tags, body_md, status, source,
+        slug, lang, title, seo_title, description, category, hero_image, tags, body_md, status, source,
         research_json, duplicate_check_json, fact_check_json, seo_report_json, ai_search_report_json,
         editorial_review_json, ai_pattern_check_json, similarity_json, internal_links_json,
         estimated_cost_usd, image_prompt, image_alt, image_caption, image_status,
         date_published
       )
       VALUES (
-        ${slug}, ${lang}, ${title}, ${body.excerpt ?? ''}, ${body.category ?? ''},
+        ${slug}, ${lang}, ${title}, ${body.seoTitle ?? null}, ${body.excerpt ?? ''}, ${body.category ?? ''},
         ${body.heroImageUrl ?? ''}, ${body.tags ?? []}, ${body.bodyMarkdown ?? ''},
         ${body.status === 'published' ? 'published' : 'draft'}, 'ai',
         ${j(body.research)}::jsonb, ${j(body.duplicateCheck)}::jsonb, ${j(body.factCheck)}::jsonb,
@@ -84,6 +85,7 @@ export const POST: APIRoute = async ({ request }) => {
       )
       ON CONFLICT (slug, lang) DO UPDATE SET
         title = EXCLUDED.title,
+        seo_title = COALESCE(NULLIF(EXCLUDED.seo_title, ''), articles.seo_title),
         description = COALESCE(NULLIF(EXCLUDED.description, ''), articles.description),
         category = COALESCE(NULLIF(EXCLUDED.category, ''), articles.category),
         hero_image = COALESCE(NULLIF(EXCLUDED.hero_image, ''), articles.hero_image),
