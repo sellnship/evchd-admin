@@ -53,12 +53,13 @@ export const POST: APIRoute = async ({ request, redirect }) => {
         .resize(size.width, size.height, { fit: 'cover', position: 'centre' })
         .webp({ quality: WEBP_QUALITY })
         .toBuffer();
+      // Unique filename per upload (not a fixed overwritten path) — Vercel
+      // Blob's CDN caches by URL, so overwriting the same pathname served a
+      // stale cached image after "saving" a new one.
       const heroSlug = lang === 'hi' ? `${slug}-hi` : slug;
-      const blob = await put(`blog/${heroSlug}-hero.webp`, webp, {
+      const blob = await put(`blog/${heroSlug}-hero-${Date.now()}.webp`, webp, {
         access: 'public',
         contentType: 'image/webp',
-        addRandomSuffix: false,
-        allowOverwrite: true,
       });
       heroUrl = blob.url;
     }
