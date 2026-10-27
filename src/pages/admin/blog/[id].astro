@@ -221,6 +221,10 @@ const hasPipelineReport = Boolean(
             )}
             <div class="d-flex gap-2 flex-wrap">
               <button type="button" class="btn btn-outline-light-subtle btn-sm" id="previewBtn">👁 Preview</button>
+              <button type="button" class="btn btn-outline-light-subtle btn-sm" id="copyPreviewLinkBtn"
+                disabled={isNew} title={isNew ? '💾 Save the article once before sharing a preview link' : ''}>
+                🔗 Copy preview link
+              </button>
               {llmReady ? (
                 <>
                   <button type="button" class="btn btn-outline-light-subtle btn-sm" id="factCheckBtn">✓ Fact Check</button>
@@ -241,6 +245,7 @@ const hasPipelineReport = Boolean(
               <div class="progress-bar" id="toolsProgressBar" role="progressbar" style="width: 0%"></div>
             </div>
             <div class="small mt-1" id="contentToolsStatus"></div>
+            <div class="small mt-1" id="previewLinkStatus"></div>
             <div class="mt-2" id="factCheckResults" style="display:none;"></div>
             <div class="mt-2" id="seoCheckResults" style="display:none;"></div>
             <div class="small mt-2" id="linksSkippedBox" style="display:none;"></div>
@@ -456,7 +461,7 @@ const hasPipelineReport = Boolean(
     </div>
   </div>
 
-  <script define:vars={{ counterpartTitle: counterpart?.title ?? '', counterpartDescription: counterpart?.description ?? '', counterpartBody: counterpart?.body_md ?? '', targetLang: article.lang }}>
+  <script define:vars={{ counterpartTitle: counterpart?.title ?? '', counterpartDescription: counterpart?.description ?? '', counterpartBody: counterpart?.body_md ?? '', targetLang: article.lang, previewArticleId: isNew ? null : article.id }}>
     // Live word count + target-length guidance on the Body textarea — matches
     // the AI Generator page's counter, but this page never had one (manual
     // edits and continuing an AI draft here both need to see it against the
@@ -667,6 +672,43 @@ const hasPipelineReport = Boolean(
     });
     document.getElementById('previewCloseBtn').addEventListener('click', () => { previewOverlay.style.display = 'none'; });
     previewOverlay.addEventListener('click', (e) => { if (e.target === previewOverlay) previewOverlay.style.display = 'none'; });
+
+    // Copy preview link — a shareable, no-login URL a non-admin reviewer can
+    // open (the token itself is the access control; see middleware.ts).
+    const copyPreviewLinkBtn = document.getElementById('copyPreviewLinkBtn');
+    const previewLinkStatus = document.getElementById('previewLinkStatus');
+    copyPreviewLinkBtn?.addEventListener('click', async () => {
+      if (!previewArticleId) { previewLinkStatus.textContent = '💾 Save the article once first.'; return; }
+      const original = copyPreviewLinkBtn.textContent;
+      copyPreviewLinkBtn.disabled = true; copyPreviewLinkBtn.textContent = 'Generating…';
+      try {
+        const res = await fetch('/admin/api/blog/preview-link', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: previewArticleId }),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(data.error || 'Could not create a preview link.');
+        const url = `${window.location.origin}/admin/preview/${data.token}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          previewLinkStatus.innerHTML = `✓ Link copied — anyone with it can view this draft, no login needed: <a href="${url}" target="_blank" rel="noopener">${url}</a> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="revokePreviewLinkBtn">revoke</button>`;
+        } catch {
+          previewLinkStatus.innerHTML = `Copy this link manually: <a href="${url}" target="_blank" rel="noopener">${url}</a> · <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="revokePreviewLinkBtn">revoke</button>`;
+        }
+        document.getElementById('revokePreviewLinkBtn')?.addEventListener('click', async () => {
+          if (!confirm('Revoke this preview link? The URL you shared will stop working.')) return;
+          await fetch('/admin/api/blog/preview-link', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: previewArticleId, revoke: true }),
+          });
+          previewLinkStatus.textContent = '✓ Link revoked.';
+        });
+      } catch (err) {
+        previewLinkStatus.textContent = '✗ ' + err.message;
+      } finally {
+        copyPreviewLinkBtn.disabled = false; copyPreviewLinkBtn.textContent = original;
+      }
+    });
 
     // Fact Check / SEO Check — reuse the AI pipeline's single-stage endpoints
     // against whatever's currently in the editor, so a manually-written

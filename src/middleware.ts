@@ -5,9 +5,15 @@ import { COOKIE_NAME, verifyToken } from './lib/auth';
 
 const OPEN_PATHS = new Set(['/admin/login', '/admin/api/login']);
 
+// Shareable preview links (/admin/preview/<token>) are deliberately public —
+// the long random token IS the access control (same model as a Google Docs
+// "anyone with the link" share), so non-admin reviewers can open them without
+// signing in.
+const isOpenPreview = (pathname: string) => pathname.startsWith('/admin/preview/');
+
 export const onRequest = defineMiddleware(async (ctx, next) => {
   const { pathname } = ctx.url;
-  if (!OPEN_PATHS.has(pathname) && !verifyToken(ctx.cookies.get(COOKIE_NAME)?.value)) {
+  if (!OPEN_PATHS.has(pathname) && !isOpenPreview(pathname) && !verifyToken(ctx.cookies.get(COOKIE_NAME)?.value)) {
     // Relative path, not an absolute URL: this app is only ever reached
     // through the main site's rewrite (www.evchandigarh.in/admin -> this
     // deployment), which is a transparent proxy from the browser's point of

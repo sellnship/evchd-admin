@@ -1,0 +1,67 @@
+---
+export const prerender = false;
+import { sql, type Article } from '../../../lib/db';
+import { marked } from 'marked';
+
+const { token } = Astro.params;
+const rows = (await sql()`SELECT * FROM articles WHERE preview_token = ${token}`) as unknown as Article[];
+const article = rows[0] ?? null;
+const bodyHtml = article ? (marked.parse(article.body_md, { async: false }) as string) : '';
+---
+<html lang={article?.lang === 'hi' ? 'hi' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{article ? `Preview: ${article.title}` : 'Preview not found'}</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; padding: 0 1.25rem 4rem; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #fff; color: #1a1a1a; line-height: 1.6;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #15161a; color: #e9e6df; }
+        .banner { background: #3a2f00 !important; color: #ffd866 !important; }
+        .meta { color: #a3a3a3 !important; }
+        .tag { background: #2a2b31 !important; color: #c9c9c9 !important; }
+      }
+      .banner {
+        background: #fff4ce; color: #6b5300; font-size: 0.85rem; font-weight: 600;
+        padding: 0.6rem 1rem; margin: 0 -1.25rem 1.5rem; text-align: center;
+      }
+      .wrap { max-width: 720px; margin: 0 auto; }
+      img.hero { width: 100%; border-radius: 10px; margin-bottom: 1rem; object-fit: cover; aspect-ratio: 16/9; }
+      .meta { color: #666; font-size: 0.85rem; margin-bottom: 0.5rem; }
+      h1 { font-size: 1.8rem; line-height: 1.25; margin: 0 0 0.75rem; }
+      .tags { margin-bottom: 1.5rem; }
+      .tag {
+        display: inline-block; background: #f1f1f1; color: #555; font-size: 0.75rem;
+        border-radius: 999px; padding: 0.2rem 0.7rem; margin: 0 0.3rem 0.3rem 0;
+      }
+      article :global(img) { max-width: 100%; border-radius: 8px; }
+      .not-found { max-width: 480px; margin: 4rem auto; text-align: center; }
+    </style>
+  </head>
+  <body>
+    {article ? (
+      <div class="wrap">
+        <div class="banner">👁 PREVIEW — {article.status === 'published' ? 'published' : 'unpublished draft'}, not the live page</div>
+        {article.hero_image && <img class="hero" src={article.hero_image} alt={article.image_alt || article.title} />}
+        {article.category && <div class="meta">{article.category}</div>}
+        <h1>{article.title}</h1>
+        {article.tags?.length > 0 && (
+          <div class="tags">
+            {article.tags.map((t) => <span class="tag">{t}</span>)}
+          </div>
+        )}
+        <article set:html={bodyHtml} />
+      </div>
+    ) : (
+      <div class="not-found">
+        <h1>Preview not found</h1>
+        <p>This preview link is invalid or has been revoked.</p>
+      </div>
+    )}
+  </body>
+</html>
