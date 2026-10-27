@@ -71,13 +71,13 @@ const imageModels = await getAvailableImageModels();
 const imagesReady = imageModels.length > 0;
 const defaultImageModel = await getDefaultImageModel();
 
-// Estimated cost/time per model (+ per quality tier for gpt-image-1), keyed
-// for the client-side JS below — "gpt-image-1:low" etc, else just the model id.
+// Estimated cost/time per model (+ per quality tier for gpt-image-2), keyed
+// for the client-side JS below — "gpt-image-2:low" etc, else just the model id.
 const imageEstimates: Record<string, { cost: string; time: number }> = {};
 for (const m of imageModels) {
-  if (m.id === 'gpt-image-1') {
+  if (m.id === 'gpt-image-2') {
     for (const q of GPT_IMAGE_QUALITIES) {
-      imageEstimates[`gpt-image-1:${q}`] = { cost: formatUsd(estimateImageCostUsd(m.id, q)), time: estimateImageTimeSec(m.id, q) };
+      imageEstimates[`gpt-image-2:${q}`] = { cost: formatUsd(estimateImageCostUsd(m.id, q)), time: estimateImageTimeSec(m.id, q) };
     }
   } else {
     imageEstimates[m.id] = { cost: formatUsd(estimateImageCostUsd(m.id)), time: estimateImageTimeSec(m.id) };
@@ -939,7 +939,7 @@ const hasPipelineReport = Boolean(
   {!isNew && imagesReady && (
     <script define:vars={{ articleId: article.id, imageEstimates }}>
       function estimateFor(model, quality) {
-        const key = model === 'gpt-image-1' ? `gpt-image-1:${quality}` : model;
+        const key = model === 'gpt-image-2' ? `gpt-image-2:${quality}` : model;
         return imageEstimates[key] || { cost: '~$0.04', time: 20 };
       }
 
@@ -1008,7 +1008,7 @@ const hasPipelineReport = Boolean(
         const heroProgressWrap = document.getElementById('heroProgressWrap');
 
         function refreshHeroEstimate() {
-          const isGpt = heroModelEl.value === 'gpt-image-1';
+          const isGpt = heroModelEl.value === 'gpt-image-2';
           heroQualityWrap.style.display = isGpt ? '' : 'none';
           const est = estimateFor(heroModelEl.value, heroQualityEl.value);
           let note = `Estimated cost: ${est.cost} · estimated time: ~${est.time}s`;
@@ -1059,7 +1059,7 @@ const hasPipelineReport = Boolean(
       const bodyProgressWrap = document.getElementById('bodyImgProgressWrap');
 
       function refreshBodyEstimate() {
-        const isGpt = bodyModelEl.value === 'gpt-image-1';
+        const isGpt = bodyModelEl.value === 'gpt-image-2';
         bodyQualityEl.style.display = isGpt ? '' : 'none';
         const est = estimateFor(bodyModelEl.value, bodyQualityEl.value);
         bodyEstimateEl.textContent = `Estimated cost: ${est.cost} · estimated time: ~${est.time}s`;

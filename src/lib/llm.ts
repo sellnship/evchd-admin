@@ -19,10 +19,10 @@ export interface Provider {
 }
 
 export const PROVIDERS: Provider[] = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', defaultModel: 'claude-opus-4-8', keyHint: 'console.anthropic.com → API Keys', envVar: 'ANTHROPIC_API_KEY' },
-  { id: 'openai', label: 'OpenAI', defaultModel: 'gpt-4o', keyHint: 'platform.openai.com → API Keys', envVar: 'OPENAI_API_KEY' },
-  { id: 'groq', label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', keyHint: 'console.groq.com → API Keys', envVar: 'GROQ_API_KEY' },
-  { id: 'gemini', label: 'Google Gemini', defaultModel: 'gemini-2.5-flash', keyHint: 'aistudio.google.com → Get API Key', envVar: 'GEMINI_API_KEY' },
+  { id: 'anthropic', label: 'Anthropic (Claude)', defaultModel: 'claude-opus-5', keyHint: 'console.anthropic.com → API Keys', envVar: 'ANTHROPIC_API_KEY' },
+  { id: 'openai', label: 'OpenAI', defaultModel: 'gpt-5.5', keyHint: 'platform.openai.com → API Keys', envVar: 'OPENAI_API_KEY' },
+  { id: 'groq', label: 'Groq', defaultModel: 'openai/gpt-oss-120b', keyHint: 'console.groq.com → API Keys', envVar: 'GROQ_API_KEY' },
+  { id: 'gemini', label: 'Google Gemini', defaultModel: 'gemini-3.8-flash', keyHint: 'aistudio.google.com → Get API Key', envVar: 'GEMINI_API_KEY' },
   { id: 'xai', label: 'Grok (xAI)', defaultModel: 'grok-3', keyHint: 'console.x.ai → API Keys', envVar: 'XAI_API_KEY' },
   { id: 'edenai', label: 'Eden AI (aggregator)', defaultModel: 'openai/gpt-4o', keyHint: 'app.edenai.run → API keys — model format: provider/model', envVar: 'EDENAI_API_KEY' },
 ];
@@ -166,7 +166,10 @@ export async function complete(
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens }),
+    // max_completion_tokens: the newer param name OpenAI's gpt-5+ models require
+    // (max_tokens 400s on them) -- verified both old and new models, plus Groq,
+    // accept it fine, so it's used universally rather than branching per-model.
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_completion_tokens: maxTokens }),
   });
   if (!res.ok) throw apiError(providerId, res.status, await res.text());
   const j = await res.json();
@@ -314,7 +317,7 @@ async function rawCompletionForJson(
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, response_format: { type: 'json_object' } }),
+    body: JSON.stringify({ model, messages, max_completion_tokens: maxTokens, response_format: { type: 'json_object' } }),
   });
   if (!res.ok) throw apiError(providerId, res.status, await res.text());
   const j = await res.json();
@@ -331,11 +334,14 @@ export interface ImageModel {
 }
 
 // Best-quality first — the editor preselects the best AVAILABLE entry.
+// gpt-image-1 and dall-e-3 were retired from this account's Images API access
+// (both now 400 "model does not exist") -- replaced with gpt-image-2 (verified
+// working at 1536x1024/medium) and the cheaper gpt-image-1-mini tier.
 export const IMAGE_MODELS: ImageModel[] = [
-  { id: 'gpt-image-1', provider: 'openai', label: 'GPT Image 1 (OpenAI) — best quality', best: true },
+  { id: 'gpt-image-2', provider: 'openai', label: 'GPT Image 2 (OpenAI) — best quality', best: true },
+  { id: 'gpt-image-1-mini', provider: 'openai', label: 'GPT Image 1 Mini (OpenAI) — faster, cheaper' },
   { id: 'gemini-2.5-flash-image', provider: 'gemini', label: 'Gemini 2.5 Flash Image (Nano Banana)' },
   { id: 'imagen-4.0-generate-001', provider: 'gemini', label: 'Imagen 4 (Gemini API)' },
-  { id: 'dall-e-3', provider: 'openai', label: 'DALL·E 3 (OpenAI)' },
   { id: 'edenai-openai', provider: 'edenai', label: 'Eden AI — OpenAI images (aggregator)' },
 ];
 
@@ -375,8 +381,9 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 }
 
 /** Generate one landscape image and return the raw bytes. `quality` only applies
- *  to gpt-image-1 (low/medium/high) — "high" can take 45-60s+ and risks Vercel's
- *  Hobby-plan 60s hard function cap, so the caller's UI should surface that. */
+ *  to the gpt-image-* family (low/medium/high) — "high" can take 45-60s+ and
+ *  risks Vercel's Hobby-plan 60s hard function cap, so the caller's UI should
+ *  surface that. */
 export async function generateImage(modelId: string, prompt: string, quality?: string): Promise<Buffer> {
   const model = IMAGE_MODELS.find((m) => m.id === modelId);
   if (!model) throw new Error(`unknown image model "${modelId}"`);
@@ -384,15 +391,14 @@ export async function generateImage(modelId: string, prompt: string, quality?: s
   if (!key) throw new Error(`No ${model.provider} key configured — add it in Settings`);
 
   if (model.provider === 'openai') {
-    // Images API. gpt-image-1 always returns b64_json; dall-e-3 needs asking.
+    // Images API — the gpt-image-* family always returns b64_json.
     const body: Record<string, unknown> = {
       model: model.id,
       prompt,
       n: 1,
-      size: model.id === 'dall-e-3' ? '1792x1024' : '1536x1024', // landscape
+      size: '1536x1024', // landscape
     };
-    if (model.id === 'dall-e-3') body.response_format = 'b64_json';
-    if (model.id === 'gpt-image-1') {
+    if (model.id.startsWith('gpt-image')) {
       body.quality = quality === 'low' || quality === 'high' ? quality : 'medium';
     }
     const res = await fetchWithTimeout('https://api.openai.com/v1/images/generations', {
