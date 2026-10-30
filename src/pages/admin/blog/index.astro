@@ -10,8 +10,12 @@ const rows = (flt
 
 const fmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—';
+
+const err = Astro.url.searchParams.get('err');
+const backHref = Astro.url.pathname + Astro.url.search.replace(/[?&]err=[^&]*/, '').replace(/^&/, '?');
 ---
 <AdminLayout title="Blog CMS" active="blog" sub={`${rows.length} article(s)`}>
+  {err && <div class="alert alert-danger py-2 small">Error: {decodeURIComponent(err)}</div>}
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div class="btn-group">
       <a class={`btn btn-sm ${!flt ? 'btn-accent' : 'btn-outline-light-subtle'}`} href="/admin/blog">All</a>
@@ -42,6 +46,14 @@ const fmt = (d: string | null) =>
                 <td class="small text-secondary">{fmt(a.date_published)}</td>
                 <td class="text-end">
                   <a class="btn btn-sm btn-outline-light-subtle" href={`/admin/blog/${a.id}`}>Edit</a>
+                  <form method="post" action="/admin/api/blog/delete" class="d-inline">
+                    <input type="hidden" name="id" value={a.id} />
+                    <input type="hidden" name="back" value={backHref} />
+                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                      onclick="return confirm('Delete this article? This cannot be undone.')">
+                      Delete
+                    </button>
+                  </form>
                 </td>
               </tr>
             ))}
